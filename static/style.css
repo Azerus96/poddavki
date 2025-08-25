@@ -1,0 +1,128 @@
+/* --- Общие стили и сброс --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh; /* Занимаем всю высоту экрана */
+    margin: 0;
+    background-color: #2c3e50; /* Темно-синий фон */
+    color: #ecf0f1; /* Светлый текст */
+    overflow: hidden; /* Запрещаем прокрутку страницы */
+    
+    /* Убираем синюю подсветку при нажатии на элементы в мобильных браузерах */
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* --- Контейнер игры --- */
+#game-container {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* --- Игровая доска --- */
+#board {
+    display: flex;
+    flex-wrap: wrap; /* Позволяет клеткам переноситься на новую строку, создавая сетку */
+    width: 90vw; /* 90% ширины видимой области экрана */
+    max-width: 500px; /* Но не больше 500px на больших экранах */
+    aspect-ratio: 1 / 1; /* Гарантирует, что доска всегда будет квадратной */
+    border: 4px solid #8d6e63; /* Деревянная рамка */
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4); /* Глубокая тень для объема */
+}
+
+/* --- Клетки доски --- */
+.square {
+    width: 12.5%; /* 100% / 8 = 12.5% */
+    height: 12.5%;
+    box-sizing: border-box; /* Включает padding и border в общую ширину/высоту */
+}
+
+.light {
+    background-color: #f0d9b5; /* Цвет светлых клеток */
+}
+
+.dark {
+    background-color: #b58863; /* Цвет темных клеток */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* --- Шашки --- */
+.piece {
+    width: 85%;
+    height: 85%;
+    border-radius: 50%; /* Делает элемент круглым */
+    cursor: grab; /* Курсор "рука" при наведении на десктопе */
+    box-shadow: inset 0 -4px 8px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3); /* 3D-эффект */
+    
+    /* Запрещает браузеру выполнять стандартные действия (скролл, зум) при касании */
+    touch-action: none;
+}
+
+.piece.white {
+    background: radial-gradient(circle at 50% 30%, #ffffff, #e0e0e0);
+}
+
+.piece.black {
+    background: radial-gradient(circle at 50% 30%, #444444, #111111);
+}
+
+/* --- Дамки --- */
+.piece.king::after {
+    content: '👑'; /* Иконка короны */
+    font-size: 60%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    color: gold;
+    text-shadow: 0 0 3px black; /* Тень для лучшей читаемости короны */
+    
+    /* Корона не должна перехватывать события мыши/касания */
+    pointer-events: none; 
+}
+
+/* --- Стиль для перетаскиваемой шашки --- */
+.dragging {
+    position: fixed; /* Позиционирование относительно окна браузера */
+    opacity: 0.7;
+    z-index: 1000; /* Всегда поверх других элементов */
+    
+    /* Перетаскиваемый клон не должен перехватывать события, чтобы мы могли определить клетку под ним */
+    pointer-events: none; 
+}
+
+/* --- Статус и кнопка --- */
+#status {
+    margin: 15px;
+    font-size: 1.2em;
+    min-height: 1.5em; /* Резервируем место, чтобы layout не "прыгал" */
+    font-weight: bold;
+}
+
+button {
+    margin-top: 10px;
+    padding: 12px 24px;
+    font-size: 1em;
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    background-color: #8d6e63;
+    color: white;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+button:hover {
+    background-color: #a1887f;
+}
+
+button:active {
+    transform: translateY(2px); /* Эффект "нажатия" */
+    box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+}
