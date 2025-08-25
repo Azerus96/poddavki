@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    
+    <!-- 
+      Ключевой мета-тег для мобильной адаптации.
+      - width=device-width: ширина страницы равна ширине экрана устройства.
+      - initial-scale=1.0: начальный масштаб 100%.
+      - user-scalable=no: запрещает пользователю масштабировать страницу (зум), 
+        что создает ощущение нативного приложения.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    
+    <title>KestoG Поддавки</title>
+    
+    <!-- Подключаем наш файл со стилями -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Главный контейнер для центрирования всего контента -->
+    <div id="game-container">
+        <h1>Поддавки KestoG</h1>
+        
+        <!-- Элемент для отображения статуса игры (чей ход, ошибки, результат) -->
+        <div id="status">Подключение к серверу...</div>
+        
+        <!-- 
+          Контейнер для игровой доски. 
+          JavaScript буд
