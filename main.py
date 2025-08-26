@@ -12,6 +12,24 @@ TT_SIZE_MB = 128 # Размер транспозиционной таблицы 
 SEARCH_DEPTH = 16 # Максимальная глубина поиска
 TIME_LIMIT_MS = 5000 # 5 секунд на ход
 
+# --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+# Таблица для перевода из 64-клеточной нумерации фронтенда (JS)
+# в 32-клеточную нумерацию движка (C++).
+# Ключ: индекс 0-63 от JS. Значение: индекс 0-31 для C++.
+# (Предполагается, что фронтенд нумерует клетки от 0 до 63, a1=0, h8=63)
+LOOKUP_64_TO_32 = {
+    1: 0, 3: 1, 5: 2, 7: 3,
+    8: 4, 10: 5, 12: 6, 14: 7,
+    17: 8, 19: 9, 21: 10, 23: 11,
+    24: 12, 26: 13, 28: 14, 30: 15,
+    33: 16, 35: 17, 37: 18, 39: 19,
+    40: 20, 42: 21, 44: 22, 46: 23,
+    49: 24, 51: 25, 53: 26, 55: 27,
+    56: 28, 58: 29, 60: 30, 62: 31
+}
+# --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
+
 # --- Инициализация C++ движка ---
 kestog_core.init_engine(TT_SIZE_MB)
 
@@ -26,7 +44,7 @@ async def read_root(): return FileResponse('static/index.html')
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
-    # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+    # --- НАЧАЛО ИСПРАВЛЕНИЯ (Инициализация игры, этот блок был верным) ---
     # Сервер должен быть "хозяином" игры. Он создает начальную доску
     # и отправляет ее клиенту первым, чтобы начать игровой цикл.
     initial_board = kestog_core.Bitboard()
@@ -78,23 +96,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка нет ходов)!"})
 
             elif payload['type'] == 'move':
-    # Получаем индексы из 64-клеточной системы (как прислал фронтенд)
-                from_square_64 = payload['move']['from']
-                to_square_64 = payload['move']['to']
-
-    # !!! КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Переводим в 32-клеточную систему !!!
-                from_square_32 = from_square_64 // 2
-                to_square_32 = to_square_64 // 2
-
-    # Теперь создаем маски, которые C++ движок поймет
-                from_mask = 1 << from_square_32
-                to_mask = 1 << to_square_32
-    
+                # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+                try:
+                    from_32 = LOOKUP_64_TO_32[payload['move']['from']]
+                    to_32 = LOOKUP_64_TO_32[payload['move']['to']]
+                    from_mask = 1 << from_32
+                    to_mask = 1 << to_32
+                except KeyError:
+                    # Попытка хода с/на белую клетку или неверный индекс
+                    await websocket.send_json({"type": "error", "message": "Неверные координаты хода!"})
+                    continue
+                # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+                
                 legal_moves = kestog_core.generate_legal_moves(board, WHITE)
                 found_move = next((m for m in legal_moves if m.mask_from == from_mask and m.mask_to == to_mask), None)
 
                 if found_move:
-        
                     new_board = kestog_core.apply_move(board, found_move, WHITE)
                     
                     is_multicapture = False
