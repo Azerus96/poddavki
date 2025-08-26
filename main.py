@@ -25,6 +25,28 @@ async def read_root(): return FileResponse('static/index.html')
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
+    # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+    # Сервер должен быть "хозяином" игры. Он создает начальную доску
+    # и отправляет ее клиенту первым, чтобы начать игровой цикл.
+    initial_board = kestog_core.Bitboard()
+    initial_board.white_men = 4095  # Начальная позиция белых
+    initial_board.black_men = 4290772992  # Начальная позиция черных
+    initial_board.kings = 0
+
+    # Отправляем первое состояние доски клиенту
+    await websocket.send_json({
+        "type": "board_update",
+        "board": {
+            "white_men": str(initial_board.white_men),
+            "black_men": str(initial_board.black_men),
+            "kings": str(initial_board.kings)
+        },
+        "turn": WHITE,
+        "message": "Ваш ход"
+    })
+    # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
     try:
         while True:
             data = await websocket.receive_text()
