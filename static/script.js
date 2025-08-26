@@ -8,31 +8,39 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPlayerTurn = true;
     let socket = null;
 
-    function getInitialBoard() {
-        return {
-            white_men: "4095",
-            black_men: "4290772992",
-            kings: "0"
-        };
-    }
+    // Таблица для конвертации индекса 0-31 (внутренний) в 0-63 (для сервера)
+    const LOOKUP_32_TO_64 = {
+        0: 1, 1: 3, 2: 5, 3: 7,
+        4: 8, 5: 10, 6: 12, 7: 14,
+        8: 17, 9: 19, 10: 21, 11: 23,
+        12: 24, 13: 26, 14: 28, 15: 30,
+        16: 33, 17: 35, 18: 37, 19: 39,
+        20: 40, 21: 42, 22: 44, 23: 46,
+        24: 49, 25: 51, 26: 53, 27: 55,
+        28: 56, 29: 58, 30: 60, 31: 62
+    };
 
     function renderBoard() {
         boardElement.innerHTML = '';
+        // Создаем доску с правильной ориентацией (a1 внизу слева)
         for (let row = 7; row >= 0; row--) {
             for (let col = 0; col < 8; col++) {
                 const square = document.createElement('div');
+                const squareIndex64 = row * 8 + col;
                 square.className = 'square';
                 const isDark = (row + col) % 2 !== 0;
 
+                square.classList.add(isDark ? 'dark' : 'light');
+                
                 if (isDark) {
-                    square.classList.add('dark');
-                    const boardIndex = Math.floor(row * 4) + Math.floor(col / 2);
-                    square.dataset.boardIndex = boardIndex;
+                    // Вычисляем индекс 0-31 для черных клеток
+                    const boardIndex32 = Math.floor(squareIndex64 / 8) * 4 + Math.floor(squareIndex64 % 8 / 2);
+                    square.dataset.boardIndex = boardIndex32;
 
-                    const mask = 1n << BigInt(boardIndex);
+                    const mask = 1n << BigInt(boardIndex32);
                     let piece = null;
-                    if (BigInt(currentBoard.white_men) & mask) piece = { color: 'white', isKing: (BigInt(currentBoard.kings) & mask) };
-                    if (BigInt(currentBoard.black_men) & mask) piece = { color: 'black', isKing: (BigInt(currentBoard.kings) & mask) };
+                    if (BigInt(currentBoard.white_men) & mask) piece = { color: 'white', isKing: (BigInt(currentBoard.kings) & mask) !== 0n };
+                    if (BigInt(currentBoard.black_men) & mask) piece = { color: 'black', isKing: (BigInt(currentBoard.kings) & mask) !== 0n };
 
                     if (piece) {
                         const pieceElement = document.createElement('div');
@@ -96,10 +104,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const toSquare = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.square.dark');
 
         if (toSquare && fromSquare !== toSquare) {
-            const fromIndex = parseInt(fromSquare.dataset.boardIndex);
-            const toIndex = parseInt(toSquare.dataset.boardIndex);
-            const move = { from: fromIndex, to: toIndex };
-            socket.send(JSON.stringify({ type: 'move', board: currentBoard, move: move }));
+            const fromIndex32 = parseInt(fromSquare.dataset.boardIndex);
+            const toIndex32 = parseInt(toSquare.dataset.boardIndex);
+            
+            // Конвертируем в 64-клеточную нумерацию перед отправкой
+            const fromIndex64 = LOOKUP_32_TO_64[fromIndex32];
+            const toIndex64 = LOOKUP_32_TO_64[toIndex32];
+
+            const move = { from: fromIndex64, to: toIndex64 };
+            // Отправляем только ход, без доски
+            socket.send(JSON.stringify({ type: 'move', move: move }));
         }
 
         originalPiece.style.opacity = '1';
@@ -125,47 +139,47 @@ document.addEventListener('DOMContentLoaded', () => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
         
-        // --- НАЧАЛО ИСПРАВЛЕНИЯ ---
-        // Клиент не должен начинать игру сам. Он должен ждать первого сообщения от сервера.
         socket.onopen = () => { 
             statusElement.textContent = 'Соединение установлено. Ожидание доски...';
         };
-        // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'board_update') {
                 currentBoard = data.board;
                 isPlayerTurn = data.turn === WHITE;
-                renderBoard();
+                renderBoard(); // Сначала рендерим доску
+
+                // Если сервер прислал указание на мульти-захват, подсвечиваем шашку
+                if (data.must_move_from !== undefined) {
+                    const squares = boardElement.querySelectorAll('.square[data-board-index]');
+                    squares.forEach(sq => {
+                        if (parseInt(sq.dataset.boardIndex) === data.must_move_from) {
+                            const piece = sq.querySelector('.piece');
+                            if (piece) piece.classList.add('must-move');
+                        }
+                    });
+                }
+
                 statusElement.textContent = data.message || (isPlayerTurn ? 'Ваш ход' : 'Ход движка...');
                 if (!isPlayerTurn) {
-                    setTimeout(() => socket.send(JSON.stringify({ type: 'engine_move', board: currentBoard })), 200);
+                    // Отправляем запрос на ход движка без доски
+                    setTimeout(() => socket.send(JSON.stringify({ type: 'engine_move' })), 500);
                 }
             } else if (data.type === 'error') {
                 statusElement.textContent = `Ошибка: ${data.message}`;
-                isPlayerTurn = true; // Возвращаем ход игроку после ошибки
+                isPlayerTurn = true;
                 renderBoard();
             } else if (data.type === 'game_over') {
+                currentBoard = data.board || currentBoard; // Обновляем доску, если она пришла с сообщением о конце игры
+                renderBoard();
                 statusElement.textContent = data.message;
-                isPlayerTurn = false; // Игра окончена
+                isPlayerTurn = false;
             }
         };
         socket.onclose = () => { statusElement.textContent = 'Соединение потеряно. Обновите страницу.'; };
     }
 
-    function startNewGame() {
-        // Эта функция теперь используется только для кнопки "Начать заново".
-        // Она сбрасывает доску локально и отправляет запрос на сервер,
-        // но сервер в текущей реализации его не обрабатывает.
-        // Для полной перезагрузки лучше просто обновить страницу.
-        // Однако, для сброса на клиенте, этого достаточно.
-        currentBoard = getInitialBoard();
-        isPlayerTurn = true;
-        renderBoard();
-        statusElement.textContent = 'Ваш ход (белые)';
-    }
-
     connect();
-    resetButton.addEventListener('click', () => window.location.reload()); // Самый надежный сброс - перезагрузка
+    resetButton.addEventListener('click', () => window.location.reload());
 });
