@@ -2,42 +2,37 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    
-    <!-- 
-      Ключевой мета-тег для мобильной адаптации.
-      - width=device-width: ширина страницы равна ширине экрана устройства.
-      - initial-scale=1.0: начальный масштаб 100%.
-      - user-scalable=no: запрещает пользователю масштабировать страницу (зум), 
-        что создает ощущение нативного приложения.
-    -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    
     <title>KestoG Поддавки</title>
-    
-    <!-- Подключаем наш файл со стилями -->
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <!-- Главный контейнер для центрирования всего контента -->
     <div id="game-container">
         <h1>Поддавки KestoG</h1>
-        
-        <!-- Элемент для отображения статуса игры (чей ход, ошибки, результат) -->
         <div id="status">Подключение к серверу...</div>
         
-        <!-- 
-          Контейнер для игровой доски. 
-          JavaScript будет его заполнять 
-        -->
-        <div id="board"></div>
+        <!-- НАЧАЛО ИЗМЕНЕНИЙ: Контейнер для доски и координат -->
+        <div id="board-wrapper">
+            <div class="coords coords-top">
+                <span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span>
+            </div>
+            <div class="coords coords-left">
+                <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+            </div>
+            
+            <div id="board"></div> <!-- Сама доска теперь внутри -->
+            
+            <div class="coords coords-right">
+                <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+            </div>
+            <div class="coords coords-bottom">
+                <span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span>
+            </div>
+        </div>
+        <!-- КОНЕЦ ИЗМЕНЕНИЙ -->
 
-        <!-- НАЧАЛО ИСПРАВЛЕНИЯ: Добавляем недостающую кнопку, чтобы скрипт не падал с ошибкой -->
         <button id="reset-button">Начать заново</button>
-        <!-- КОНЕЦ ИСПРАВЛЕНИЯ -->
-
     </div>
-    
-    <!-- Подключаем скрипт в конце body для лучшей производительности -->
     <script src="/static/script.js"></script>
 </body>
 </html>
