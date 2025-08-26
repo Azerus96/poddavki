@@ -93,48 +93,32 @@ namespace kestog_core {
     }
 
     // --- Генерация ходов ---
-
-    // =================================================================================
-    // НАЧАЛО ИСПРАВЛЕННОГО БЛОКА: Полностью переписанная логика генерации взятий
-    // =================================================================================
     void find_man_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, int color, u64 opponents, u64 empty) {
         bool can_jump_further = false;
         u64 promo_rank = (color == 1) ? PROMO_RANK_WHITE : PROMO_RANK_BLACK;
-        u64 all_pieces = ~empty;
-
-        // Направления для белых: +4, +5 (вперед), -4, -5 (назад)
-        // Направления для черных: -4, -5 (вперед), +4, +5 (назад)
         int dirs[] = {4, 5, -4, -5};
-        u64 guards1[] = {NOT_COL_A, NOT_COL_H, NOT_COL_H, NOT_COL_A}; // Ограничения для поля, С которого прыгаем
-        u64 guards2[] = {NOT_COL_H, NOT_COL_A, NOT_COL_A, NOT_COL_H}; // Ограничения для поля, НА которое прыгаем
+        u64 guards_from[] = {NOT_COL_A, NOT_COL_H, NOT_COL_H, NOT_COL_A};
+        u64 guards_jumped[] = {NOT_COL_A, NOT_COL_H, NOT_COL_H, NOT_COL_A};
 
         for (int i = 0; i < 4; ++i) {
             int dir = dirs[i];
-            // Шашки могут бить назад, но не могут ходить тихо назад
-            // if (color == 1 && dir < 0) continue; // Белые не бьют назад (по международным правилам)
-            // if (color == 2 && dir > 0) continue; // Черные не бьют назад (по международным правилам)
-            // В русских шашках и поддавках бить назад можно, поэтому строки выше закомментированы.
-
-            if ((current_pos & guards1[i])) {
-                u64 jumped_pos = (dir > 0) ? (current_pos << dir) : (current_pos >> -dir);
-                u64 land_pos = (dir > 0) ? (jumped_pos << dir) : (jumped_pos >> -dir);
-
-                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty) && (land_pos & guards2[i])) {
-                    can_jump_further = true;
-                    u64 new_captured = captured | jumped_pos;
-                    u64 new_empty = (empty & ~land_pos) | current_pos;
-
-                    if ((land_pos & promo_rank) && !(start_pos & promo_rank)) {
-                        find_king_jumps(captures, start_pos, land_pos, new_captured, opponents, new_empty);
-                    } else {
-                        find_man_jumps(captures, start_pos, land_pos, new_captured, color, opponents, new_empty);
+            if (current_pos & guards_from[i]) {
+                u64 jumped_piece = (dir > 0) ? (current_pos << dir) : (current_pos >> -dir);
+                if ((jumped_piece & guards_jumped[i]) && (jumped_piece & opponents) && !(captured & jumped_piece)) {
+                    u64 land_pos = (dir > 0) ? (jumped_piece << dir) : (jumped_piece >> -dir);
+                    if (land_pos & empty) {
+                        can_jump_further = true;
+                        if (land_pos & promo_rank) {
+                            find_king_jumps(captures, start_pos, land_pos, captured | jumped_piece, opponents, empty ^ land_pos);
+                        } else {
+                            find_man_jumps(captures, start_pos, land_pos, captured | jumped_piece, color, opponents, empty ^ land_pos);
+                        }
                     }
                 }
             }
         }
-
         if (!can_jump_further && captured > 0) {
-            captures.push_back({start_pos, current_pos, captured, (current_pos & promo_rank) != 0 && !(start_pos & promo_rank), 0});
+            captures.push_back({start_pos, current_pos, captured, (current_pos & promo_rank) != 0, 0});
         }
     }
 
@@ -146,59 +130,39 @@ namespace kestog_core {
         for (int i = 0; i < 4; ++i) {
             int dir = dirs[i];
             u64 guard = guards[i];
-            
-            u64 path = current_pos;
-            // Скользим по пустым клеткам
-            while ((path = (dir > 0) ? (path << dir) : (path >> -dir)) & empty & guard);
-
-            // Нашли препятствие. Проверяем, можем ли мы его срубить.
-            if ((path & opponents) && !(captured & path) && (path & guard)) {
-                u64 jumped_pos = path;
-                u64 land_pos = (dir > 0) ? (jumped_pos << dir) : (jumped_pos >> -dir);
-
-                // Если за срубленной фигурой есть хотя бы одна пустая клетка
-                if ((land_pos & empty) && (land_pos & guard)) {
-                    // Можем приземлиться на любую пустую клетку на этой диагонали
-                    for (u64 land_path = land_pos; (land_path & guard); land_path = (dir > 0) ? (land_path << dir) : (land_path >> -dir)) {
-                        if (!(land_path & empty)) break;
-                        
-                        can_jump_further = true;
-                        u64 new_captured = captured | jumped_pos;
-                        u64 new_empty = (empty & ~land_path) | current_pos | jumped_pos;
-                        find_king_jumps(captures, start_pos, land_path, new_captured, opponents, new_empty);
+            for (u64 path = current_pos; (path & guard); ) {
+                path = (dir > 0) ? (path << dir) : (path >> -dir);
+                if (!(path & empty)) {
+                    if ((path & opponents) && !(captured & path)) {
+                        u64 land_start = (dir > 0) ? (path << dir) : (path >> -dir);
+                        if ((path & guard) && (land_start & empty)) {
+                            u64 new_empty = empty | path;
+                            for (u64 land_path = land_start; (land_path & guard); ) {
+                                can_jump_further = true;
+                                find_king_jumps(captures, start_pos, land_path, captured | path, opponents, new_empty ^ land_path);
+                                land_path = (dir > 0) ? (land_path << dir) : (land_path >> -dir);
+                                if (!(land_path & new_empty)) break;
+                            }
+                        }
                     }
+                    break;
                 }
             }
         }
-
         if (!can_jump_further && captured > 0) {
             captures.push_back({start_pos, current_pos, captured, false, 0});
         }
     }
-    // =================================================================================
-    // КОНЕЦ ИСПРАВЛЕННОГО БЛОКА
-    // =================================================================================
-
 
     std::vector<Move> generate_captures(const Bitboard& board, int color_to_move) {
         std::vector<Move> captures;
         u64 my_pieces = (color_to_move == 1) ? board.white_men : board.black_men;
         u64 opponents = (color_to_move == 1) ? board.black_men : board.white_men;
         u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
-        
         u64 men = my_pieces & ~board.kings;
-        while(men) { 
-            u64 p = 1ULL << (bitscan_forward(men)-1); 
-            find_man_jumps(captures, p, p, 0, color_to_move, opponents, empty); 
-            men &= men-1; 
-        }
-        
+        while(men) { u64 p = 1ULL << (bitscan_forward(men)-1); find_man_jumps(captures, p, p, 0, color_to_move, opponents, empty); men &= men-1; }
         u64 kings = my_pieces & board.kings;
-        while(kings) { 
-            u64 p = 1ULL << (bitscan_forward(kings)-1); 
-            find_king_jumps(captures, p, p, 0, opponents, empty); 
-            kings &= kings-1; 
-        }
+        while(kings) { u64 p = 1ULL << (bitscan_forward(kings)-1); find_king_jumps(captures, p, p, 0, opponents, empty); kings &= kings-1; }
         return captures;
     }
 
@@ -268,6 +232,9 @@ namespace kestog_core {
         return black_material - white_material;
     }
 
+    // =================================================================================
+    // НАЧАЛО ИЗМЕНЕННОГО БЛОКА: Инкрементальное обновление хеша
+    // =================================================================================
     Bitboard apply_move(const Bitboard& b, const Move& m, int c) {
         Bitboard next_b = b;
         u64 from_to = m.mask_from | m.mask_to;
@@ -297,25 +264,34 @@ namespace kestog_core {
         }
 
         // 2. Обновляем хеш
+        // 2.1 Убираем фигуру со старой позиции
         int piece_type_from = (c == 1) ? (is_king_before_move ? 2 : 0) : (is_king_before_move ? 3 : 1);
         next_b.hash ^= ZOBRIST[from_idx][piece_type_from];
-        // ИСПРАВЛЕНИЕ: Учитываем, что фигура может уже быть дамкой
-        int piece_type_to = (c == 1) ? (m.becomes_king || is_king_before_move ? 2 : 0) : (m.becomes_king || is_king_before_move ? 3 : 1);
+
+        // 2.2 Ставим фигуру на новую позицию (учитывая возможное превращение)
+        int piece_type_to = (c == 1) ? (m.becomes_king ? 2 : piece_type_from) : (m.becomes_king ? 3 : piece_type_from);
         next_b.hash ^= ZOBRIST[to_idx][piece_type_to];
 
+        // 2.3 Убираем срубленные фигуры
         if (m.captured_pieces) {
             u64 captured = m.captured_pieces;
             while (captured) {
                 int captured_idx = bitscan_forward(captured) - 1;
                 bool was_king = (b.kings & (1ULL << captured_idx)) != 0;
-                int captured_type = (c == 1) ? (was_king ? 3 : 1) : (was_king ? 2 : 0);
+                int captured_type = (c == 1) ? (was_king ? 3 : 1) : (was_king ? 2 : 0); // Тип фигуры оппонента
                 next_b.hash ^= ZOBRIST[captured_idx][captured_type];
                 captured &= captured - 1;
             }
         }
+
+        // 2.4 XOR-им ключ смены хода
         next_b.hash ^= ZOBRIST_BLACK_TO_MOVE;
+
         return next_b;
     }
+    // =================================================================================
+    // КОНЕЦ ИЗМЕНЕННОГО БЛОКА
+    // =================================================================================
 
     // --- Логика Поиска ---
     void score_moves(std::vector<Move>& moves, const Move& tt_move, int ply) {
@@ -369,6 +345,8 @@ namespace kestog_core {
 
         for (const auto& move : moves) {
             Bitboard next_board = apply_move(board, move, color);
+            // Хеш уже посчитан в apply_move, следующая строка не нужна
+            // next_board.hash = calculate_hash(next_board, 3 - color);
 
             int score = -negamax(next_board, -beta, -alpha, depth - 1, 3 - color, ply + 1);
 
@@ -428,6 +406,7 @@ namespace kestog_core {
         memset(history, 0, sizeof(history));
 
         Bitboard root_board = board;
+        // Хеш должен быть посчитан перед началом поиска
         root_board.hash = calculate_hash(board, color_to_move);
 
         Move best_move_overall{};
