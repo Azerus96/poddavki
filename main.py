@@ -78,13 +78,23 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка нет ходов)!"})
 
             elif payload['type'] == 'move':
-                from_mask = 1 << payload['move']['from']
-                to_mask = 1 << payload['move']['to']
-                
+    # Получаем индексы из 64-клеточной системы (как прислал фронтенд)
+                from_square_64 = payload['move']['from']
+                to_square_64 = payload['move']['to']
+
+    # !!! КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Переводим в 32-клеточную систему !!!
+                from_square_32 = from_square_64 // 2
+                to_square_32 = to_square_64 // 2
+
+    # Теперь создаем маски, которые C++ движок поймет
+                from_mask = 1 << from_square_32
+                to_mask = 1 << to_square_32
+    
                 legal_moves = kestog_core.generate_legal_moves(board, WHITE)
                 found_move = next((m for m in legal_moves if m.mask_from == from_mask and m.mask_to == to_mask), None)
 
                 if found_move:
+        
                     new_board = kestog_core.apply_move(board, found_move, WHITE)
                     
                     is_multicapture = False
