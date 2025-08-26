@@ -8,22 +8,12 @@ from starlette.websockets import WebSocketDisconnect
 
 # --- Константы ---
 WHITE, BLACK = 1, 2
-TT_SIZE_MB = 128 # Размер транспозиционной таблицы в мегабайтах
-SEARCH_DEPTH = 16 # Максимальная глубина поиска
-TIME_LIMIT_MS = 5000 # 5 секунд на ход
+TT_SIZE_MB = 128
+SEARCH_DEPTH = 16
+TIME_LIMIT_MS = 5000
 
-# Таблица для перевода из 64-клеточной нумерации фронтенда (JS)
-# в 32-клеточную нумерацию движка (C++).
-LOOKUP_64_TO_32 = {
-    1: 0, 3: 1, 5: 2, 7: 3,
-    8: 4, 10: 5, 12: 6, 14: 7,
-    17: 8, 19: 9, 21: 10, 23: 11,
-    24: 12, 26: 13, 28: 14, 30: 15,
-    33: 16, 35: 17, 37: 18, 39: 19,
-    40: 20, 42: 21, 44: 22, 46: 23,
-    49: 24, 51: 25, 53: 26, 55: 27,
-    56: 28, 58: 29, 60: 30, 62: 31
-}
+# --- ТАБЛИЦА КООРДИНАТ УДАЛЕНА ---
+# Фронтенд и бэкенд теперь общаются на одном языке (индексы 0-31)
 
 # --- Инициализация C++ движка ---
 kestog_core.init_engine(TT_SIZE_MB)
@@ -39,14 +29,12 @@ async def read_root(): return FileResponse('static/index.html')
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
-    # Сервер является "хозяином" игры. Он создает и хранит состояние доски.
     initial_board = kestog_core.Bitboard()
     initial_board.white_men = 4095
-    initial_board.black_men = 4293918720
+    initial_board.black_men = 4293918720 # Корректное значение
     initial_board.kings = 0
     current_board = initial_board
 
-    # Отправляем первое состояние доски клиенту, чтобы начать игровой цикл.
     await websocket.send_json({
         "type": "board_update",
         "board": {
@@ -69,7 +57,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 if result.best_move.mask_from != 0:
                     current_board = kestog_core.apply_move(current_board, result.best_move, BLACK)
                     
-                    # Проверка на победу/поражение
                     if not current_board.white_men:
                         await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас не осталось шашек)!"})
                         continue
@@ -89,14 +76,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif payload['type'] == 'move':
                 try:
-                    from_64 = payload['move']['from']
-                    to_64 = payload['move']['to']
-                    from_32 = LOOKUP_64_TO_32[from_64]
-                    to_32 = LOOKUP_64_TO_32[to_64]
+                    from_32 = int(payload['move']['from'])
+                    to_32 = int(payload['move']['to'])
+
+                    # Валидация полученных индексов
+                    if not (0 <= from_32 < 32 and 0 <= to_32 < 32):
+                        await websocket.send_json({"type": "error", "message": "Неверные координаты хода!"})
+                        continue
+
                     from_mask = 1 << from_32
                     to_mask = 1 << to_32
-                except KeyError:
-                    await websocket.send_json({"type": "error", "message": "Неверные координаты хода!"})
+                except (KeyError, ValueError, TypeError):
+                    await websocket.send_json({"type": "error", "message": "Неверный формат хода!"})
                     continue
                 
                 legal_moves = kestog_core.generate_legal_moves(current_board, WHITE)
@@ -105,7 +96,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 if found_move:
                     current_board = kestog_core.apply_move(current_board, found_move, WHITE)
                     
-                    # Проверка на победу/поражение
                     if not current_board.black_men:
                         await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка не осталось шашек)!"})
                         continue
@@ -123,7 +113,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             "board": {"white_men": str(current_board.white_men), "black_men": str(current_board.black_men), "kings": str(current_board.kings)}, 
                             "turn": WHITE, 
                             "message": "Завершите взятие!",
-                            "must_move_from": to_32 # Отправляем индекс клетки для подсветки
+                            "must_move_from": to_32
                         })
                     else:
                         engine_moves = kestog_core.generate_legal_moves(current_board, BLACK)
