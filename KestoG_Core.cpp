@@ -171,14 +171,14 @@ namespace kestog_core {
         const u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
         if (color_to_move == 1) {
             u64 men = board.white_men & ~board.kings;
-            u64 movers_4 = ((men & NOT_COL_H) << 4) & empty; // Ход вперед-вправо
-            u64 movers_5 = ((men & NOT_COL_A) << 5) & empty; // Ход вперед-влево
+            u64 movers_4 = ((men & NOT_COL_A) << 4) & empty;
+            u64 movers_5 = ((men & NOT_COL_H) << 5) & empty;
             while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t >> 4, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_4 &= movers_4 - 1; }
             while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t >> 5, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_5 &= movers_5 - 1; }
         } else {
             u64 men = board.black_men & ~board.kings;
-            u64 movers_4 = ((men & NOT_COL_A) >> 4) & empty; // Ход назад-влево
-            u64 movers_5 = ((men & NOT_COL_H) >> 5) & empty; // Ход назад-вправо
+            u64 movers_4 = ((men & NOT_COL_H) >> 4) & empty;
+            u64 movers_5 = ((men & NOT_COL_A) >> 5) & empty;
             while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t << 4, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); movers_4 &= movers_4 - 1; }
             while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t << 5, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); movers_5 &= movers_5 - 1; }
         }
