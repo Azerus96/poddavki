@@ -31,7 +31,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # и отправляет ее клиенту первым, чтобы начать игровой цикл.
     initial_board = kestog_core.Bitboard()
     initial_board.white_men = 4095  # Начальная позиция белых
-    initial_board.black_men = 4290772992  # Начальная позиция черных
+    initial_board.black_men = 4293918720  # Начальная позиция черных
     initial_board.kings = 0
 
     # Отправляем первое состояние доски клиенту
