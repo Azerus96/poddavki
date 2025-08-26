@@ -124,7 +124,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
-        socket.onopen = () => { startNewGame(); };
+        
+        // --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        // Клиент не должен начинать игру сам. Он должен ждать первого сообщения от сервера.
+        socket.onopen = () => { 
+            statusElement.textContent = 'Соединение установлено. Ожидание доски...';
+        };
+        // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'board_update') {
@@ -148,6 +155,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startNewGame() {
+        // Эта функция теперь используется только для кнопки "Начать заново".
+        // Она сбрасывает доску локально и отправляет запрос на сервер,
+        // но сервер в текущей реализации его не обрабатывает.
+        // Для полной перезагрузки лучше просто обновить страницу.
+        // Однако, для сброса на клиенте, этого достаточно.
         currentBoard = getInitialBoard();
         isPlayerTurn = true;
         renderBoard();
@@ -155,5 +167,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     connect();
-    resetButton.addEventListener('click', startNewGame);
+    resetButton.addEventListener('click', () => window.location.reload()); // Самый надежный сброс - перезагрузка
 });
