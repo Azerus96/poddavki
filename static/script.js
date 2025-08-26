@@ -8,21 +8,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPlayerTurn = true;
     let socket = null;
 
-    // Таблица для конвертации индекса 0-31 (внутренний) в 0-63 (для сервера)
-    const LOOKUP_32_TO_64 = {
-        0: 1, 1: 3, 2: 5, 3: 7,
-        4: 8, 5: 10, 6: 12, 7: 14,
-        8: 17, 9: 19, 10: 21, 11: 23,
-        12: 24, 13: 26, 14: 28, 15: 30,
-        16: 33, 17: 35, 18: 37, 19: 39,
-        20: 40, 21: 42, 22: 44, 23: 46,
-        24: 49, 25: 51, 26: 53, 27: 55,
-        28: 56, 29: 58, 30: 60, 31: 62
-    };
+    // Таблица для конвертации удалена, она больше не нужна.
+
+    function getInitialBoard() { // Эта функция не используется для старта, но исправлена для консистентности
+        return {
+            white_men: "4095",
+            black_men: "4293918720", // Исправленное значение
+            kings: "0"
+        };
+    }
 
     function renderBoard() {
         boardElement.innerHTML = '';
-        // Создаем доску с правильной ориентацией (a1 внизу слева)
         for (let row = 7; row >= 0; row--) {
             for (let col = 0; col < 8; col++) {
                 const square = document.createElement('div');
@@ -33,8 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 square.classList.add(isDark ? 'dark' : 'light');
                 
                 if (isDark) {
-                    // Вычисляем индекс 0-31 для черных клеток
-                    const boardIndex32 = Math.floor(squareIndex64 / 8) * 4 + Math.floor(squareIndex64 % 8 / 2);
+                    // Корректный расчет индекса 0-31
+                    const boardIndex32 = row * 4 + Math.floor(col / 2);
                     square.dataset.boardIndex = boardIndex32;
 
                     const mask = 1n << BigInt(boardIndex32);
@@ -107,12 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const fromIndex32 = parseInt(fromSquare.dataset.boardIndex);
             const toIndex32 = parseInt(toSquare.dataset.boardIndex);
             
-            // Конвертируем в 64-клеточную нумерацию перед отправкой
-            const fromIndex64 = LOOKUP_32_TO_64[fromIndex32];
-            const toIndex64 = LOOKUP_32_TO_64[toIndex32];
-
-            const move = { from: fromIndex64, to: toIndex64 };
-            // Отправляем только ход, без доски
+            // Отправляем индексы 0-31 напрямую
+            const move = { from: fromIndex32, to: toIndex32 };
             socket.send(JSON.stringify({ type: 'move', move: move }));
         }
 
@@ -148,9 +141,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.type === 'board_update') {
                 currentBoard = data.board;
                 isPlayerTurn = data.turn === WHITE;
-                renderBoard(); // Сначала рендерим доску
+                renderBoard();
 
-                // Если сервер прислал указание на мульти-захват, подсвечиваем шашку
                 if (data.must_move_from !== undefined) {
                     const squares = boardElement.querySelectorAll('.square[data-board-index]');
                     squares.forEach(sq => {
@@ -163,7 +155,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 statusElement.textContent = data.message || (isPlayerTurn ? 'Ваш ход' : 'Ход движка...');
                 if (!isPlayerTurn) {
-                    // Отправляем запрос на ход движка без доски
                     setTimeout(() => socket.send(JSON.stringify({ type: 'engine_move' })), 500);
                 }
             } else if (data.type === 'error') {
@@ -171,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isPlayerTurn = true;
                 renderBoard();
             } else if (data.type === 'game_over') {
-                currentBoard = data.board || currentBoard; // Обновляем доску, если она пришла с сообщением о конце игры
+                currentBoard = data.board || currentBoard;
                 renderBoard();
                 statusElement.textContent = data.message;
                 isPlayerTurn = false;
