@@ -135,28 +135,32 @@ namespace kestog_core {
         int from_idx = bitscan_forward(current_pos) - 1;
 
         for (int i = 0; i < 4; ++i) { // 4 направления
-            int current_neighbor_idx = from_idx;
-            // Летим по пустым полям
-            while (true) {
-                current_neighbor_idx = BOARD_GEOMETRY[current_neighbor_idx].neighbors[i];
-                if (current_neighbor_idx == -1 || !( (1ULL << current_neighbor_idx) & empty) ) break;
-                
-                int jumped_idx = BOARD_GEOMETRY[current_neighbor_idx].neighbors[i];
-                if (jumped_idx != -1) {
-                    u64 jumped_pos = 1ULL << jumped_idx;
-                    if ((jumped_pos & opponents) && !(captured & jumped_pos)) {
-                        int land_idx = BOARD_GEOMETRY[jumped_idx].neighbors[i];
-                        if (land_idx != -1 && ((1ULL << land_idx) & empty)) {
-                             for (int current_land_idx = land_idx; current_land_idx != -1; current_land_idx = BOARD_GEOMETRY[current_land_idx].neighbors[i]) {
-                                u64 land_pos = 1ULL << current_land_idx;
-                                if (!(land_pos & empty)) break;
-                                can_jump_further = true;
-                                u64 new_captured = captured | jumped_pos;
-                                u64 new_opponents = opponents & ~jumped_pos;
-                                u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
-                                find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
-                            }
-                        }
+            int path_idx = from_idx;
+            int jumped_idx = -1;
+
+            // Летим по пустым полям в поисках первой фигуры
+            while(true) {
+                path_idx = BOARD_GEOMETRY[path_idx].neighbors[i];
+                if (path_idx == -1) break; // Уперлись в край доски
+                if ((1ULL << path_idx) & opponents) {
+                    jumped_idx = path_idx;
+                    break;
+                }
+                if (!((1ULL << path_idx) & empty)) break; // Уперлись в свою фигуру
+            }
+
+            if (jumped_idx != -1 && !(captured & (1ULL << jumped_idx))) {
+                u64 jumped_pos = 1ULL << jumped_idx;
+                int land_idx = BOARD_GEOMETRY[jumped_idx].neighbors[i];
+                if (land_idx != -1 && ((1ULL << land_idx) & empty)) {
+                     for (int current_land_idx = land_idx; current_land_idx != -1; current_land_idx = BOARD_GEOMETRY[current_land_idx].neighbors[i]) {
+                        u64 land_pos = 1ULL << current_land_idx;
+                        if (!(land_pos & empty)) break;
+                        can_jump_further = true;
+                        u64 new_captured = captured | jumped_pos;
+                        u64 new_opponents = opponents & ~jumped_pos;
+                        u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
+                        find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
                     }
                 }
             }
@@ -182,7 +186,6 @@ namespace kestog_core {
             u64 jumped_pos = 1ULL << jumped_idx;
             u64 land_pos = 1ULL << land_idx;
 
-            // Прыжок через шашку соперника (взятие)
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
                 u64 new_captured = captured | jumped_pos;
@@ -194,12 +197,6 @@ namespace kestog_core {
                 } else {
                     find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_my_pieces, new_opponents, new_empty);
                 }
-            }
-            // Комбинированный прыжок: через свою, потом бьем чужую
-            else if ((jumped_pos & my_pieces) && (land_pos & empty)) {
-                u64 new_my_pieces = (my_pieces & ~current_pos) | land_pos;
-                u64 new_empty = (empty | current_pos) & ~land_pos;
-                find_man_jumps(captures, start_pos, land_pos, captured, color, new_my_pieces, opponents, new_empty);
             }
         }
 
@@ -242,7 +239,7 @@ namespace kestog_core {
             u64 p = 1ULL << (bitscan_forward(temp_men) - 1);
             int from_idx = bitscan_forward(p) - 1;
 
-            int start_dir = (color_to_move == 1) ? 0 : 2; // Белые - СВ, СЗ. Черные - ЮЗ, ЮВ
+            int start_dir = (color_to_move == 1) ? 0 : 2;
             int end_dir = (color_to_move == 1) ? 2 : 4;
 
             // 1. Обычные тихие ходы
@@ -255,25 +252,10 @@ namespace kestog_core {
                     }
                 }
             }
-
-            // 2. Тихие ходы с прыжком через свои
-            for (int i = 0; i < 4; ++i) {
-                int jumped_idx = BOARD_GEOMETRY[from_idx].neighbors[i];
-                if (jumped_idx == -1) continue;
-                int land_idx = BOARD_GEOMETRY[jumped_idx].neighbors[i];
-                if (land_idx == -1) continue;
-
-                u64 jumped_pos = 1ULL << jumped_idx;
-                u64 land_pos = 1ULL << land_idx;
-
-                if ((jumped_pos & my_pieces) && (land_pos & empty)) {
-                    moves.push_back({p, land_pos, 0, (land_pos & (color_to_move == 1 ? PROMO_RANK_WHITE : PROMO_RANK_BLACK)) != 0, 0});
-                }
-            }
             temp_men &= temp_men - 1;
         }
 
-        // 3. Ходы дамок
+        // 2. Ходы дамок
         u64 kings = my_pieces & ~my_men;
         while(kings) {
             u64 p = 1ULL << (bitscan_forward(kings) - 1);
