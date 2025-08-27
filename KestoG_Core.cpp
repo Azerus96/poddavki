@@ -241,19 +241,13 @@ namespace kestog_core {
         return captures;
     }
 
-    // =================================================================================
-    // >>>>> ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Добавлена логика "тихого хода с прыжком" <<<<<
-    // =================================================================================
     std::vector<Move> generate_quiet_moves(const Bitboard& board, int color_to_move) {
         std::vector<Move> moves;
         const u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
-        u64 my_pieces = (color_to_move == 1) ? board.white_men : board.black_men;
-        u64 my_men = my_pieces & ~board.kings;
+        u64 my_men = ((color_to_move == 1) ? board.white_men : board.black_men) & ~board.kings;
 
-        // 1. Обычные тихие ходы
-        u64 temp_men = my_men;
-        while (temp_men) {
-            u64 p = 1ULL << (bitscan_forward(temp_men) - 1);
+        while (my_men) {
+            u64 p = 1ULL << (bitscan_forward(my_men) - 1);
             int from_idx = bitscan_forward(p) - 1;
             int row = from_idx / 4;
 
@@ -274,74 +268,14 @@ namespace kestog_core {
                     if (!(p & COL_H)) { u64 t = p >> 3; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); }
                 }
             }
-            temp_men &= temp_men - 1;
+            my_men &= my_men - 1;
         }
 
-        // 2. Тихие ходы с прыжком через свои шашки
-        temp_men = my_men;
-        while (temp_men) {
-            u64 p = 1ULL << (bitscan_forward(temp_men) - 1);
-            int from_idx = bitscan_forward(p) - 1;
-            int row = from_idx / 4;
-
-            // Проверяем все 4 направления для прыжка
-            // СВ
-            if (!(p & COL_G) && !(p & COL_H)) {
-                int jumped_idx = from_idx + (row % 2 == 0 ? 5 : 4);
-                int land_idx = from_idx + 9;
-                if (land_idx < 32) {
-                    u64 jumped_pos = 1ULL << jumped_idx;
-                    u64 land_pos = 1ULL << land_idx;
-                    if ((jumped_pos & my_pieces) && (land_pos & empty)) {
-                        moves.push_back({p, land_pos, 0, (land_pos & PROMO_RANK_WHITE) != 0, 0});
-                    }
-                }
-            }
-            // СЗ
-            if (!(p & COL_A) && !(p & COL_B)) {
-                int jumped_idx = from_idx + (row % 2 == 0 ? 4 : 3);
-                int land_idx = from_idx + 7;
-                if (land_idx < 32) {
-                    u64 jumped_pos = 1ULL << jumped_idx;
-                    u64 land_pos = 1ULL << land_idx;
-                    if ((jumped_pos & my_pieces) && (land_pos & empty)) {
-                        moves.push_back({p, land_pos, 0, (land_pos & PROMO_RANK_WHITE) != 0, 0});
-                    }
-                }
-            }
-            // ЮЗ
-            if (!(p & COL_A) && !(p & COL_B)) {
-                int jumped_idx = from_idx - (row % 2 == 0 ? 4 : 5);
-                int land_idx = from_idx - 9;
-                if (land_idx >= 0) {
-                    u64 jumped_pos = 1ULL << jumped_idx;
-                    u64 land_pos = 1ULL << land_idx;
-                    if ((jumped_pos & my_pieces) && (land_pos & empty)) {
-                        moves.push_back({p, land_pos, 0, (land_pos & PROMO_RANK_BLACK) != 0, 0});
-                    }
-                }
-            }
-            // ЮВ
-            if (!(p & COL_G) && !(p & COL_H)) {
-                int jumped_idx = from_idx - (row % 2 == 0 ? 3 : 4);
-                int land_idx = from_idx - 7;
-                if (land_idx >= 0) {
-                    u64 jumped_pos = 1ULL << jumped_idx;
-                    u64 land_pos = 1ULL << land_idx;
-                    if ((jumped_pos & my_pieces) && (land_pos & empty)) {
-                        moves.push_back({p, land_pos, 0, (land_pos & PROMO_RANK_BLACK) != 0, 0});
-                    }
-                }
-            }
-            temp_men &= temp_men - 1;
-        }
-
-        // 3. Ходы дамок
-        u64 kings = my_pieces & ~my_men;
+        u64 kings = ((color_to_move == 1) ? board.white_men : board.black_men) & ~my_men;
         while(kings) {
             u64 p = 1ULL << (bitscan_forward(kings) - 1);
-            int dirs[] = {5, 4, -5, -4};
-            u64 guards[] = {NOT_H_COL, NOT_A_COL, NOT_A_COL, NOT_H_COL};
+            int dirs[] = {9, 7, -7, -9};
+            u64 guards[] = {NOT_G_H_COL, NOT_A_B_COL, NOT_G_H_COL, NOT_A_B_COL};
             for (int i = 0; i < 4; ++i) {
                 int dir = dirs[i];
                 u64 guard = guards[i];
