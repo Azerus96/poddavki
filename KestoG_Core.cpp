@@ -39,7 +39,6 @@ namespace kestog_core {
 
     // =================================================================================
     // >>>>> ГЛАВНОЕ ИСПРАВЛЕНИЕ: КОРРЕКТНЫЕ МАСКИ ГЕОМЕТРИИ ДОСКИ <<<<<
-    // Эти маски соответствуют нумерации полей, используемой в Python и JS
     const u64 COL_A = (1ULL << 4) | (1ULL << 12) | (1ULL << 20) | (1ULL << 28);
     const u64 COL_B = (1ULL << 0) | (1ULL << 8)  | (1ULL << 16) | (1ULL << 24);
     const u64 COL_G = (1ULL << 7) | (1ULL << 15) | (1ULL << 23) | (1ULL << 31);
@@ -49,10 +48,14 @@ namespace kestog_core {
     const u64 NOT_H_COL = ~COL_H;
     const u64 NOT_A_B_COL = ~(COL_A | COL_B);
     const u64 NOT_G_H_COL = ~(COL_G | COL_H);
+    
+    // Маски для разделения рядов
+    const u64 ODD_ROWS = 0x0F0F0F0F;  // Ряды 1,3,5,7 (b,d,f,h)
+    const u64 EVEN_ROWS = 0xF0F0F0F0; // Ряды 2,4,6,8 (a,c,e,g)
     // =================================================================================
     
-    const u64 PROMO_RANK_WHITE = 0xFF000000; // Ряд 8 и 7 (для белых)
-    const u64 PROMO_RANK_BLACK = 0x000000FF; // Ряд 1 и 2 (для черных)
+    const u64 PROMO_RANK_WHITE = 0xFF000000; // Ряд 7 и 8
+    const u64 PROMO_RANK_BLACK = 0x000000FF; // Ряд 1 и 2
 
     // --- Прототипы внутренних функций ---
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty);
@@ -103,7 +106,7 @@ namespace kestog_core {
         return hash;
     }
 
-    // --- Генерация ходов (с корректными масками) ---
+    // --- Генерация ходов (с корректной геометрией) ---
 
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty) {
         bool can_jump_further = false;
@@ -147,8 +150,7 @@ namespace kestog_core {
         
         // Вперед-вправо (СВ, +9)
         if ((current_pos & NOT_G_H_COL) != 0) {
-            u64 jumped_pos = current_pos << 4; // Нечетный ряд
-            if ((current_pos & 0x0F0F0F0F) == 0) jumped_pos = current_pos << 5; // Четный ряд
+            u64 jumped_pos = (current_pos & ODD_ROWS) ? (current_pos << 5) : (current_pos << 4);
             u64 land_pos = current_pos << 9;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -161,8 +163,7 @@ namespace kestog_core {
         }
         // Вперед-влево (СЗ, +7)
         if ((current_pos & NOT_A_B_COL) != 0) {
-            u64 jumped_pos = current_pos << 4; // Четный ряд
-            if ((current_pos & 0x0F0F0F0F) != 0) jumped_pos = current_pos << 3; // Нечетный ряд
+            u64 jumped_pos = (current_pos & ODD_ROWS) ? (current_pos << 4) : (current_pos << 3);
             u64 land_pos = current_pos << 7;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -175,8 +176,7 @@ namespace kestog_core {
         }
         // Назад-влево (ЮЗ, -9)
         if ((current_pos & NOT_A_B_COL) != 0) {
-            u64 jumped_pos = current_pos >> 4; // Четный ряд
-            if ((current_pos & 0x0F0F0F0F) != 0) jumped_pos = current_pos >> 5; // Нечетный ряд
+            u64 jumped_pos = (current_pos & EVEN_ROWS) ? (current_pos >> 5) : (current_pos >> 4);
             u64 land_pos = current_pos >> 9;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -189,8 +189,7 @@ namespace kestog_core {
         }
         // Назад-вправо (ЮВ, -7)
         if ((current_pos & NOT_G_H_COL) != 0) {
-            u64 jumped_pos = current_pos >> 4; // Нечетный ряд
-            if ((current_pos & 0x0F0F0F0F) == 0) jumped_pos = current_pos >> 3; // Четный ряд
+            u64 jumped_pos = (current_pos & EVEN_ROWS) ? (current_pos >> 4) : (current_pos >> 3);
             u64 land_pos = current_pos >> 7;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -233,18 +232,36 @@ namespace kestog_core {
     std::vector<Move> generate_quiet_moves(const Bitboard& board, int color_to_move) {
         std::vector<Move> moves;
         const u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
-        if (color_to_move == 1) { // Белые ходят вперед (сдвиг > 0)
+        if (color_to_move == 1) { // Белые ходят вперед
             u64 men = board.white_men & ~board.kings;
-            u64 movers_4 = ((men & NOT_A_COL) << 4) & empty;
-            u64 movers_5 = ((men & NOT_H_COL) << 5) & empty;
-            while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t >> 4, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_4 &= movers_4 - 1; }
-            while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t >> 5, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_5 &= movers_5 - 1; }
-        } else { // Черные ходят вперед (сдвиг < 0)
+            u64 men_odd = men & ODD_ROWS;
+            u64 men_even = men & EVEN_ROWS;
+            // Сдвиги для нечетных рядов: +4 (влево), +5 (вправо)
+            u64 movers_odd_4 = ((men_odd & NOT_A_COL) << 4) & empty;
+            u64 movers_odd_5 = ((men_odd & NOT_H_COL) << 5) & empty;
+            // Сдвиги для четных рядов: +3 (влево), +4 (вправо)
+            u64 movers_even_3 = ((men_even & NOT_A_COL) << 3) & empty;
+            u64 movers_even_4 = ((men_even & NOT_H_COL) << 4) & empty;
+
+            u64 m = movers_odd_4; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t >> 4, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); m &= m - 1; }
+            m = movers_odd_5; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t >> 5, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); m &= m - 1; }
+            m = movers_even_3; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t >> 3, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); m &= m - 1; }
+            m = movers_even_4; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t >> 4, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); m &= m - 1; }
+        } else { // Черные ходят вперед
             u64 men = board.black_men & ~board.kings;
-            u64 movers_4 = ((men & NOT_H_COL) >> 4) & empty;
-            u64 movers_5 = ((men & NOT_A_COL) >> 5) & empty;
-            while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t << 4, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); movers_4 &= movers_4 - 1; }
-            while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t << 5, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); movers_5 &= movers_5 - 1; }
+            u64 men_odd = men & ODD_ROWS;
+            u64 men_even = men & EVEN_ROWS;
+            // Сдвиги для нечетных рядов: -5 (влево), -4 (вправо)
+            u64 movers_odd_5 = ((men_odd & NOT_A_COL) >> 5) & empty;
+            u64 movers_odd_4 = ((men_odd & NOT_H_COL) >> 4) & empty;
+            // Сдвиги для четных рядов: -4 (влево), -3 (вправо)
+            u64 movers_even_4 = ((men_even & NOT_A_COL) >> 4) & empty;
+            u64 movers_even_3 = ((men_even & NOT_H_COL) >> 3) & empty;
+
+            u64 m = movers_odd_5; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t << 5, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); m &= m - 1; }
+            m = movers_odd_4; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t << 4, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); m &= m - 1; }
+            m = movers_even_4; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t << 4, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); m &= m - 1; }
+            m = movers_even_3; while(m) { u64 t = 1ULL << (bitscan_forward(m) - 1); moves.push_back({t << 3, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); m &= m - 1; }
         }
         u64 kings = ((color_to_move == 1) ? board.white_men : board.black_men) & board.kings;
         while(kings) {
