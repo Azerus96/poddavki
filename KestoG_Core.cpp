@@ -37,8 +37,6 @@ namespace kestog_core {
     // --- Константы доски ---
     const u64 BOARD_MASK = 0xFFFFFFFF;
 
-    // =================================================================================
-    // >>>>> ГЛАВНОЕ ИСПРАВЛЕНИЕ: КОРРЕКТНЫЕ МАСКИ ГЕОМЕТРИИ ДОСКИ <<<<<
     const u64 COL_A = (1ULL << 4) | (1ULL << 12) | (1ULL << 20) | (1ULL << 28);
     const u64 COL_B = (1ULL << 0) | (1ULL << 8)  | (1ULL << 16) | (1ULL << 24);
     const u64 COL_G = (1ULL << 7) | (1ULL << 15) | (1ULL << 23) | (1ULL << 31);
@@ -49,13 +47,14 @@ namespace kestog_core {
     const u64 NOT_A_B_COL = ~(COL_A | COL_B);
     const u64 NOT_G_H_COL = ~(COL_G | COL_H);
     
-    // Маски для разделения рядов
-    const u64 ODD_ROWS = 0x0F0F0F0F;  // Ряды 1,3,5,7 (b,d,f,h)
-    const u64 EVEN_ROWS = 0xF0F0F0F0; // Ряды 2,4,6,8 (a,c,e,g)
-    // =================================================================================
+    const u64 ODD_ROWS = 0x0F0F0F0F;
+    const u64 EVEN_ROWS = 0xF0F0F0F0;
     
-    const u64 PROMO_RANK_WHITE = 0xFF000000; // Ряд 7 и 8
-    const u64 PROMO_RANK_BLACK = 0x000000FF; // Ряд 1 и 2
+    // =================================================================================
+    // >>>>> ИСПРАВЛЕНИЕ №2: Более точные маски для дамочных полей <<<<<
+    const u64 PROMO_RANK_WHITE = (1ULL << 28) | (1ULL << 29) | (1ULL << 30) | (1ULL << 31); // Только 8-й ряд
+    const u64 PROMO_RANK_BLACK = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3);   // Только 1-й ряд
+    // =================================================================================
 
     // --- Прототипы внутренних функций ---
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty);
@@ -106,7 +105,7 @@ namespace kestog_core {
         return hash;
     }
 
-    // --- Генерация ходов (с корректной геометрией) ---
+    // --- Генерация ходов ---
 
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty) {
         bool can_jump_further = false;
@@ -236,10 +235,8 @@ namespace kestog_core {
             u64 men = board.white_men & ~board.kings;
             u64 men_odd = men & ODD_ROWS;
             u64 men_even = men & EVEN_ROWS;
-            // Сдвиги для нечетных рядов: +4 (влево), +5 (вправо)
             u64 movers_odd_4 = ((men_odd & NOT_A_COL) << 4) & empty;
             u64 movers_odd_5 = ((men_odd & NOT_H_COL) << 5) & empty;
-            // Сдвиги для четных рядов: +3 (влево), +4 (вправо)
             u64 movers_even_3 = ((men_even & NOT_A_COL) << 3) & empty;
             u64 movers_even_4 = ((men_even & NOT_H_COL) << 4) & empty;
 
@@ -251,10 +248,8 @@ namespace kestog_core {
             u64 men = board.black_men & ~board.kings;
             u64 men_odd = men & ODD_ROWS;
             u64 men_even = men & EVEN_ROWS;
-            // Сдвиги для нечетных рядов: -5 (влево), -4 (вправо)
             u64 movers_odd_5 = ((men_odd & NOT_A_COL) >> 5) & empty;
             u64 movers_odd_4 = ((men_odd & NOT_H_COL) >> 4) & empty;
-            // Сдвиги для четных рядов: -4 (влево), -3 (вправо)
             u64 movers_even_4 = ((men_even & NOT_A_COL) >> 4) & empty;
             u64 movers_even_3 = ((men_even & NOT_H_COL) >> 3) & empty;
 
