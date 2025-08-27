@@ -137,9 +137,6 @@ namespace kestog_core {
         }
     }
 
-    // =================================================================================
-    // >>>>> ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Упрощенная и надежная генерация ходов <<<<<
-    // =================================================================================
     void find_man_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, int color, u64 opponents, u64 empty) {
         bool can_jump_further = false;
         u64 promo_rank = (color == 1) ? PROMO_RANK_WHITE : PROMO_RANK_BLACK;
@@ -147,7 +144,6 @@ namespace kestog_core {
         int from_idx = bitscan_forward(current_pos) - 1;
         int row = from_idx / 4;
 
-        // Проверяем все 4 направления
         // СВ
         if (!(current_pos & COL_G) && !(current_pos & COL_H)) {
             int jumped_idx = from_idx + (row % 2 == 0 ? 5 : 4);
