@@ -13,16 +13,11 @@ SEARCH_DEPTH = 16
 TIME_LIMIT_MS = 5000
 
 # --- ТАБЛИЦА ДЛЯ ЧЕЛОВЕКО-ЧИТАЕМОГО ЛОГИРОВАНИЯ ---
-# Индекс 0-31 -> Координата 'a1', 'c1', ...
 IDX_TO_ALG = [
-    'b1', 'd1', 'f1', 'h1',
-    'a2', 'c2', 'e2', 'g2',
-    'b3', 'd3', 'f3', 'h3',
-    'a4', 'c4', 'e4', 'g4',
-    'b5', 'd5', 'f5', 'h5',
-    'a6', 'c6', 'e6', 'g6',
-    'b7', 'd7', 'f7', 'h7',
-    'a8', 'c8', 'e8', 'g8'
+    'b1', 'd1', 'f1', 'h1', 'a2', 'c2', 'e2', 'g2',
+    'b3', 'd3', 'f3', 'h3', 'a4', 'c4', 'e4', 'g4',
+    'b5', 'd5', 'f5', 'h5', 'a6', 'c6', 'e6', 'g6',
+    'b7', 'd7', 'f7', 'h7', 'a8', 'c8', 'e8', 'g8'
 ]
 
 # --- Инициализация C++ движка ---
@@ -65,12 +60,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     from_idx = result.best_move.mask_from.bit_length() - 1
                     to_idx = result.best_move.mask_to.bit_length() - 1
                     print(f"--- [ЛОГ] Движок выбрал ход: {IDX_TO_ALG[from_idx]} -> {IDX_TO_ALG[to_idx]} (индексы {from_idx} -> {to_idx}) ---")
-                    current_board = kestog_core.apply_move(current_board, result.best_move, BLACK)
                     
-                    # ... (остальная логика без изменений)
+                    # =================================================================
+                    # >>>>> ГЛАВНОЕ ИСПРАВЛЕНИЕ <<<<<
+                    # Применяем ход движка к состоянию доски на сервере.
+                    current_board = kestog_core.apply_move(current_board, result.best_move, BLACK)
+                    # =================================================================
+                    
                     if not current_board.white_men:
                         await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас не осталось шашек)!"})
                         continue
+                    
                     player_moves = kestog_core.generate_legal_moves(current_board, WHITE)
                     if not player_moves:
                         await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас нет ходов)!"})
@@ -99,7 +99,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "error", "message": "Неверный формат хода!"})
                     continue
                 
-                # --- ПОЛНОЕ ЛОГИРОВАНИЕ ЛЕГАЛЬНЫХ ХОДОВ ---
                 legal_moves = kestog_core.generate_legal_moves(current_board, WHITE)
                 print("--- [ЛОГ] C++ движок считает легальными ТОЛЬКО следующие ходы: ---")
                 if not legal_moves:
@@ -122,16 +121,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 if found_move:
                     print("--- [ЛОГ] ВЕРДИКТ: Ход игрока НАЙДЕН в списке легальных. Ход принят. ---")
                     current_board = kestog_core.apply_move(current_board, found_move, WHITE)
-                    # ... (остальная логика без изменений)
+                    
                     if not current_board.black_men:
                         await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка не осталось шашек)!"})
                         continue
+                    
                     is_multicapture = False
                     if found_move.captured_pieces:
+                        # Проверяем, есть ли продолжение взятия с той же шашки
                         next_captures = kestog_core.generate_legal_moves(current_board, WHITE)
                         if next_captures and next_captures[0].captured_pieces > 0:
+                            # Если есть хоть один ход-взятие, начинающийся с поля, где мы закончили, это мульти-взятие
                             if any(cap.mask_from == found_move.mask_to for cap in next_captures):
                                 is_multicapture = True
+                    
                     if is_multicapture:
                         await websocket.send_json({ "type": "board_update", "board": {"white_men": str(current_board.white_men), "black_men": str(current_board.black_men), "kings": str(current_board.kings)}, "turn": WHITE, "message": "Завершите взятие!", "must_move_from": to_32 })
                     else:
