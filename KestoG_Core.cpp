@@ -36,14 +36,23 @@ namespace kestog_core {
 
     // --- Константы доски ---
     const u64 BOARD_MASK = 0xFFFFFFFF;
-    // Маски для предотвращения "заворота" ходов с одного края доски на другой
-    const u64 NOT_A_B_COL = 0xEEEEEEEE; // ~ (col A | col B)
-    const u64 NOT_G_H_COL = 0x77777777; // ~ (col G | col H)
-    const u64 NOT_H_COL = 0x7F7F7F7F; // ~ col H
-    const u64 NOT_A_COL = 0xFEFEFEFE; // ~ col A
+
+    // =================================================================================
+    // >>>>> ГЛАВНОЕ ИСПРАВЛЕНИЕ: КОРРЕКТНЫЕ МАСКИ ГЕОМЕТРИИ ДОСКИ <<<<<
+    // Эти маски соответствуют нумерации полей, используемой в Python и JS
+    const u64 COL_A = (1ULL << 4) | (1ULL << 12) | (1ULL << 20) | (1ULL << 28);
+    const u64 COL_B = (1ULL << 0) | (1ULL << 8)  | (1ULL << 16) | (1ULL << 24);
+    const u64 COL_G = (1ULL << 7) | (1ULL << 15) | (1ULL << 23) | (1ULL << 31);
+    const u64 COL_H = (1ULL << 3) | (1ULL << 11) | (1ULL << 19) | (1ULL << 27);
+
+    const u64 NOT_A_COL = ~COL_A;
+    const u64 NOT_H_COL = ~COL_H;
+    const u64 NOT_A_B_COL = ~(COL_A | COL_B);
+    const u64 NOT_G_H_COL = ~(COL_G | COL_H);
+    // =================================================================================
     
-    const u64 PROMO_RANK_WHITE = 0xF0000000; // a8, c8, e8, g8
-    const u64 PROMO_RANK_BLACK = 0x0000000F; // b1, d1, f1, h1
+    const u64 PROMO_RANK_WHITE = 0xFF000000; // Ряд 8 и 7 (для белых)
+    const u64 PROMO_RANK_BLACK = 0x000000FF; // Ряд 1 и 2 (для черных)
 
     // --- Прототипы внутренних функций ---
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty);
@@ -94,15 +103,10 @@ namespace kestog_core {
         return hash;
     }
 
-    // --- Генерация ходов ---
+    // --- Генерация ходов (с корректными масками) ---
 
-    // =================================================================================
-    // НАЧАЛО ФИНАЛЬНОГО ИСПРАВЛЕННОГО БЛОКА
-    // =================================================================================
-    
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty) {
         bool can_jump_further = false;
-        // Направления для дамки: СВ, СЗ, ЮЗ, ЮВ
         int dirs[] = {5, 4, -5, -4};
         u64 guards[] = {NOT_H_COL, NOT_A_COL, NOT_A_COL, NOT_H_COL};
 
@@ -137,19 +141,14 @@ namespace kestog_core {
         }
     }
 
-    // ФИНАЛЬНАЯ ИСПРАВЛЕННАЯ ВЕРСИЯ
     void find_man_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, int color, u64 opponents, u64 empty) {
         bool can_jump_further = false;
         u64 promo_rank = (color == 1) ? PROMO_RANK_WHITE : PROMO_RANK_BLACK;
-
-        // Направления для взятий: СВ, СЗ, ЮЗ, ЮВ
-        // Сдвиги: +9, +7, -7, -9
-        // jumped_pos = current_pos + (dir/2)
-        // land_pos = current_pos + dir
         
-        // Вперед-вправо (СВ)
+        // Вперед-вправо (СВ, +9)
         if ((current_pos & NOT_G_H_COL) != 0) {
-            u64 jumped_pos = current_pos << 5;
+            u64 jumped_pos = current_pos << 4; // Нечетный ряд
+            if ((current_pos & 0x0F0F0F0F) == 0) jumped_pos = current_pos << 5; // Четный ряд
             u64 land_pos = current_pos << 9;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -160,9 +159,10 @@ namespace kestog_core {
                 else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
             }
         }
-        // Вперед-влево (СЗ)
+        // Вперед-влево (СЗ, +7)
         if ((current_pos & NOT_A_B_COL) != 0) {
-            u64 jumped_pos = current_pos << 4;
+            u64 jumped_pos = current_pos << 4; // Четный ряд
+            if ((current_pos & 0x0F0F0F0F) != 0) jumped_pos = current_pos << 3; // Нечетный ряд
             u64 land_pos = current_pos << 7;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -173,9 +173,10 @@ namespace kestog_core {
                 else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
             }
         }
-        // Назад-влево (ЮЗ)
+        // Назад-влево (ЮЗ, -9)
         if ((current_pos & NOT_A_B_COL) != 0) {
-            u64 jumped_pos = current_pos >> 5;
+            u64 jumped_pos = current_pos >> 4; // Четный ряд
+            if ((current_pos & 0x0F0F0F0F) != 0) jumped_pos = current_pos >> 5; // Нечетный ряд
             u64 land_pos = current_pos >> 9;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -186,9 +187,10 @@ namespace kestog_core {
                 else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
             }
         }
-        // Назад-вправо (ЮВ)
+        // Назад-вправо (ЮВ, -7)
         if ((current_pos & NOT_G_H_COL) != 0) {
-            u64 jumped_pos = current_pos >> 4;
+            u64 jumped_pos = current_pos >> 4; // Нечетный ряд
+            if ((current_pos & 0x0F0F0F0F) == 0) jumped_pos = current_pos >> 3; // Четный ряд
             u64 land_pos = current_pos >> 7;
             if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
                 can_jump_further = true;
@@ -205,10 +207,6 @@ namespace kestog_core {
             captures.push_back({start_pos, current_pos, captured, becomes_king, 0});
         }
     }
-    // =================================================================================
-    // КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕННОГО БЛОКА
-    // =================================================================================
-
 
     std::vector<Move> generate_captures(const Bitboard& board, int color_to_move) {
         std::vector<Move> captures;
@@ -284,13 +282,11 @@ namespace kestog_core {
         return generate_quiet_moves(board, color_to_move);
     }
 
-    // --- Оценка и Применение хода ---
+    // --- Остальной код без изменений ---
     const int PST[32] = { 10,10,10,10, 8,8,8,8, 6,6,6,6, 4,4,4,4, 2,2,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0 };
-
     int evaluate_giveaway(const Bitboard& b) {
         int white_material = popcount(b.white_men & ~b.kings) * 100 + popcount(b.white_men & b.kings) * 300;
         int black_material = popcount(b.black_men & ~b.kings) * 100 + popcount(b.black_men & b.kings) * 300;
-        
         int white_pos = 0;
         int black_pos = 0;
         u64 wm = b.white_men & ~b.kings;
@@ -300,19 +296,15 @@ namespace kestog_core {
             if (wm & mask) white_pos += PST[i];
             if (bm & mask) black_pos += PST[31 - i];
         }
-        
         return (black_material - white_material) + (black_pos - white_pos);
     }
-
     Bitboard apply_move(const Bitboard& b, const Move& m, int c) {
         Bitboard next_b = b;
         u64 from_to = m.mask_from | m.mask_to;
         next_b.hash = b.hash;
-
         int from_idx = bitscan_forward(m.mask_from) - 1;
         int to_idx = bitscan_forward(m.mask_to) - 1;
         bool is_king_before_move = (b.kings & m.mask_from) != 0;
-
         if (c == 1) {
             next_b.white_men ^= from_to;
             if (is_king_before_move) next_b.kings ^= from_to;
@@ -330,13 +322,10 @@ namespace kestog_core {
             }
             if (m.becomes_king && !is_king_before_move) next_b.kings |= m.mask_to;
         }
-
         int piece_type_from = (c == 1) ? (is_king_before_move ? 2 : 0) : (is_king_before_move ? 3 : 1);
         next_b.hash ^= ZOBRIST[from_idx][piece_type_from];
-        
         int piece_type_to = (c == 1) ? (m.becomes_king || is_king_before_move ? 2 : 0) : (m.becomes_king || is_king_before_move ? 3 : 1);
         next_b.hash ^= ZOBRIST[to_idx][piece_type_to];
-
         if (m.captured_pieces) {
             u64 captured = m.captured_pieces;
             while (captured) {
@@ -350,8 +339,6 @@ namespace kestog_core {
         next_b.hash ^= ZOBRIST_BLACK_TO_MOVE;
         return next_b;
     }
-
-    // --- Логика Поиска (без изменений) ---
     void score_moves(std::vector<Move>& moves, const Move& tt_move, int ply) {
         for (auto& move : moves) {
             if (move.mask_from == tt_move.mask_from && move.mask_to == tt_move.mask_to) {
@@ -369,7 +356,6 @@ namespace kestog_core {
             return a.score > b.score;
         });
     }
-
     int negamax(Bitboard& board, int alpha, int beta, int depth, int color, int ply) {
         nodes_searched++;
         if ((nodes_searched & 2047) == 0) {
@@ -379,39 +365,30 @@ namespace kestog_core {
             }
         }
         if (stop_search_flag || ply >= MAX_PLY) return 0;
-
         TT_Entry& tt_entry = transposition_table[board.hash & tt_mask];
         if (tt_entry.hash_lock == board.hash && tt_entry.depth >= depth) {
             if (tt_entry.flag == TT_EXACT) return tt_entry.score;
             if (tt_entry.flag == TT_ALPHA && tt_entry.score <= alpha) return alpha;
             if (tt_entry.flag == TT_BETA && tt_entry.score >= beta) return beta;
         }
-
         if (depth <= 0) {
             return quiescence_search(board, alpha, beta, color, 0);
         }
-
         auto moves = generate_legal_moves(board, color);
         if (moves.empty()) {
             return MATE_SCORE - ply;
         }
         score_moves(moves, tt_entry.best_move, ply);
-
         int best_score = -INFINITY_SCORE;
         Move best_move = moves[0];
         TT_FLAG flag = TT_ALPHA;
-
         for (const auto& move : moves) {
             Bitboard next_board = apply_move(board, move, color);
-            
             if ((color == 1 && next_board.white_men == 0) || (color == 2 && next_board.black_men == 0)) {
                 return MATE_SCORE - ply;
             }
-
             int score = -negamax(next_board, -beta, -alpha, depth - 1, 3 - color, ply + 1);
-
             if (stop_search_flag) return 0;
-
             if (score > best_score) {
                 best_score = score;
                 if (score > alpha) {
@@ -430,29 +407,22 @@ namespace kestog_core {
                 }
             }
         }
-
         tt_entry = {board.hash, best_score, depth, flag, best_move};
         return best_score;
     }
-
     int quiescence_search(Bitboard& board, int alpha, int beta, int color, int ply) {
         nodes_searched++;
         int stand_pat = (color == 1) ? evaluate_giveaway(board) : -evaluate_giveaway(board);
-        
         if (stand_pat >= beta) return beta;
         if (alpha < stand_pat) alpha = stand_pat;
-
         auto captures = generate_captures(board, color);
         if (captures.empty() || ply > 8) {
             return stand_pat;
         }
-        
         int max_captured = 0;
         for (const auto& m : captures) max_captured = std::max(max_captured, (int)popcount(m.captured_pieces));
-        
         for (const auto& capture : captures) {
             if (popcount(capture.captured_pieces) < max_captured) continue;
-
             Bitboard next_board = apply_move(board, capture, color);
             int score = -quiescence_search(next_board, -beta, -alpha, 3 - color, ply + 1);
             if (score >= beta) return beta;
@@ -460,7 +430,6 @@ namespace kestog_core {
         }
         return alpha;
     }
-
     SearchResult find_best_move(const Bitboard& board, int color_to_move, int max_depth, int time_limit_ms_param) {
         nodes_searched = 0;
         stop_search_flag = false;
@@ -468,41 +437,31 @@ namespace kestog_core {
         search_start_time = std::chrono::steady_clock::now();
         memset(killer_moves, 0, sizeof(killer_moves));
         memset(history, 0, sizeof(history));
-
         Bitboard root_board = board;
         root_board.hash = calculate_hash(board, color_to_move);
-
         Move best_move_overall{};
         int best_score_overall = 0;
         int final_depth = 0;
-
         for (int current_depth = 1; current_depth <= max_depth; ++current_depth) {
             final_depth = current_depth;
             int score = negamax(root_board, -INFINITY_SCORE, INFINITY_SCORE, current_depth, color_to_move, 0);
-            
             if (stop_search_flag && current_depth > 1) {
                 final_depth = current_depth - 1;
                 break;
             }
-
             TT_Entry& tt_entry = transposition_table[root_board.hash & tt_mask];
             best_move_overall = tt_entry.best_move;
             best_score_overall = score;
-
             auto now = std::chrono::steady_clock::now();
             double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - search_start_time).count();
-            
             std::cout << "info depth " << current_depth << " score cp " << best_score_overall
                       << " nodes " << nodes_searched << " time " << (int)elapsed << " pv " << std::endl;
-
             if (abs(best_score_overall) >= MATE_SCORE - MAX_PLY) {
                 break;
             }
         }
-
         auto end_time = std::chrono::steady_clock::now();
         double total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - search_start_time).count();
-
         return {best_move_overall, best_score_overall, nodes_searched, total_time, final_depth};
     }
 }
