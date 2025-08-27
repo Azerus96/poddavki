@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
-import asyncio # Импортируем asyncio для небольшой задержки
+import asyncio
 
 # --- Константы ---
 WHITE, BLACK = 1, 2
@@ -53,11 +53,6 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             payload = json.loads(data)
             
-            # =================================================================
-            # >>>>> ИЗМЕНЕНИЕ ЛОГИКИ <<<<<
-            # Сервер теперь обрабатывает только один тип сообщения от клиента: 'move'
-            # Сообщение 'engine_move' больше не используется.
-            # =================================================================
             if payload['type'] == 'move':
                 try:
                     from_32 = int(payload['move']['from'])
@@ -81,16 +76,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "error", "message": "Нелегальный ход!"})
                     continue
 
-                # --- Если ход игрока легален ---
                 print("--- [ЛОГ] ВЕРДИКТ: Ход игрока НАЙДЕН в списке легальных. Ход принят. ---")
                 current_board = kestog_core.apply_move(current_board, found_move, WHITE)
 
-                # Проверка на конец игры после хода игрока
+                # =================================================================
+                # >>>>> ИСПРАВЛЕНИЕ №1 и №3: Мульти-взятие и тексты сообщений <<<<<
+                # =================================================================
                 if not current_board.black_men:
-                    await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка не осталось шашек)!"})
+                    await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у движка не осталось шашек)!"})
                     continue
                 
-                # Проверка на мульти-взятие
                 is_multicapture = False
                 if found_move.captured_pieces:
                     next_captures = kestog_core.generate_legal_moves(current_board, WHITE)
@@ -99,28 +94,22 @@ async def websocket_endpoint(websocket: WebSocket):
                             is_multicapture = True
                 
                 if is_multicapture:
-                    # Если нужно продолжать бить, отправляем доску и ждем следующего хода от игрока
                     await websocket.send_json({ "type": "board_update", "board": {"white_men": str(current_board.white_men), "black_men": str(current_board.black_men), "kings": str(current_board.kings)}, "turn": WHITE, "message": "Завершите взятие!", "must_move_from": to_32 })
-                    continue # Пропускаем ход движка, так как игрок должен бить дальше
+                    continue
 
-                # --- Если ход игрока завершен, СРАЗУ ЖЕ запускаем логику движка ---
-                
-                # Отправляем промежуточный статус, чтобы игрок видел, что его ход принят
                 await websocket.send_json({
                     "type": "board_update",
                     "board": {"white_men": str(current_board.white_men), "black_men": str(current_board.black_men), "kings": str(current_board.kings)},
-                    "turn": BLACK, # Указываем, что теперь ход движка
+                    "turn": BLACK,
                     "message": "Ход движка..."
                 })
-                await asyncio.sleep(0.1) # Небольшая пауза, чтобы сообщение успело отправиться и отрисоваться
+                await asyncio.sleep(0.1)
 
-                # Проверяем, есть ли у движка ходы
                 engine_moves = kestog_core.generate_legal_moves(current_board, BLACK)
                 if not engine_moves:
-                    await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка нет ходов)!"})
+                    await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас нет ходов)!"})
                     continue
 
-                # Запускаем поиск лучшего хода для движка
                 print("\n--- [ЛОГ] Сервер инициирует ход движка. Начинаю поиск... ---")
                 result = kestog_core.find_best_move(current_board, BLACK, SEARCH_DEPTH, TIME_LIMIT_MS)
                 
@@ -131,16 +120,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     current_board = kestog_core.apply_move(current_board, result.best_move, BLACK)
                     
-                    # Проверка на конец игры после хода движка
                     if not current_board.white_men:
-                        await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас не осталось шашек)!"})
+                        await websocket.send_json({"type": "game_over", "message": "Вы победили (у вас не осталось шашек)!"})
                         continue
                     
                     player_moves = kestog_core.generate_legal_moves(current_board, WHITE)
                     if not player_moves:
-                        await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас нет ходов)!"})
+                        await websocket.send_json({"type": "game_over", "message": "Вы победили (у вас нет ходов)!"})
                     else:
-                        # Отправляем финальное состояние доски после хода движка и передаем ход игроку
                         await websocket.send_json({
                             "type": "board_update", 
                             "board": {"white_men": str(current_board.white_men), "black_men": str(current_board.black_men), "kings": str(current_board.kings)}, 
@@ -148,8 +135,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             "message": "Ваш ход",
                             "engine_info": f"Depth: {result.final_depth}, Score: {result.score}, Nodes: {result.nodes_searched}"
                         })
-                else: # Эта ветка маловероятна, т.к. мы уже проверили наличие ходов
-                    await websocket.send_json({"type": "game_over", "message": "Вы победили (у движка нет ходов)!"})
+                else:
+                    await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у движка нет ходов)!"})
 
     except WebSocketDisconnect:
         print("Client disconnected")
