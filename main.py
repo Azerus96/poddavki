@@ -79,9 +79,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 print("--- [ЛОГ] ВЕРДИКТ: Ход игрока НАЙДЕН в списке легальных. Ход принят. ---")
                 current_board = kestog_core.apply_move(current_board, found_move, WHITE)
 
-                # =================================================================
-                # >>>>> ИСПРАВЛЕНИЕ №1 и №3: Мульти-взятие и тексты сообщений <<<<<
-                # =================================================================
                 if not current_board.black_men:
                     await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у движка не осталось шашек)!"})
                     continue
@@ -107,7 +104,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 engine_moves = kestog_core.generate_legal_moves(current_board, BLACK)
                 if not engine_moves:
-                    await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у вас нет ходов)!"})
+                    await websocket.send_json({"type": "game_over", "message": "Вы проиграли (у движка нет ходов)!"})
                     continue
 
                 print("\n--- [ЛОГ] Сервер инициирует ход движка. Начинаю поиск... ---")
