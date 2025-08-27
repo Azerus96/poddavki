@@ -244,10 +244,13 @@ namespace kestog_core {
     std::vector<Move> generate_quiet_moves(const Bitboard& board, int color_to_move) {
         std::vector<Move> moves;
         const u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
-        u64 my_men = ((color_to_move == 1) ? board.white_men : board.black_men) & ~board.kings;
+        u64 my_pieces = (color_to_move == 1) ? board.white_men : board.black_men;
+        u64 my_men = my_pieces & ~board.kings;
 
-        while (my_men) {
-            u64 p = 1ULL << (bitscan_forward(my_men) - 1);
+        // 1. Обычные тихие ходы
+        u64 temp_men = my_men;
+        while (temp_men) {
+            u64 p = 1ULL << (bitscan_forward(temp_men) - 1);
             int from_idx = bitscan_forward(p) - 1;
             int row = from_idx / 4;
 
@@ -268,10 +271,11 @@ namespace kestog_core {
                     if (!(p & COL_H)) { u64 t = p >> 3; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); }
                 }
             }
-            my_men &= my_men - 1;
+            temp_men &= temp_men - 1;
         }
 
-        u64 kings = ((color_to_move == 1) ? board.white_men : board.black_men) & ~my_men;
+        // 2. Ходы дамок
+        u64 kings = my_pieces & ~my_men;
         while(kings) {
             u64 p = 1ULL << (bitscan_forward(kings) - 1);
             int dirs[] = {9, 7, -7, -9};
