@@ -37,13 +37,15 @@ namespace kestog_core {
     // --- Константы доски ---
     const u64 BOARD_MASK = 0xFFFFFFFF;
 
-    // =================================================================================
-    // >>>>> ВОЗВРАЩАЕМ СТАРЫЕ, НО ПРАВИЛЬНЫЕ МАСКИ <<<<<
-    const u64 NOT_A_B_COL = 0x3F3F3F3F; 
-    const u64 NOT_G_H_COL = 0xFCFCFCFC; 
-    const u64 NOT_H_COL = 0x7F7F7F7F;
-    const u64 NOT_A_COL = 0xFEFEFEFE;
-    // =================================================================================
+    const u64 COL_A = (1ULL << 4) | (1ULL << 12) | (1ULL << 20) | (1ULL << 28);
+    const u64 COL_B = (1ULL << 0) | (1ULL << 8)  | (1ULL << 16) | (1ULL << 24);
+    const u64 COL_G = (1ULL << 7) | (1ULL << 15) | (1ULL << 23) | (1ULL << 31);
+    const u64 COL_H = (1ULL << 3) | (1ULL << 11) | (1ULL << 19) | (1ULL << 27);
+
+    const u64 NOT_A_COL = ~COL_A;
+    const u64 NOT_H_COL = ~COL_H;
+    const u64 NOT_A_B_COL = ~(COL_A | COL_B);
+    const u64 NOT_G_H_COL = ~(COL_G | COL_H);
     
     const u64 PROMO_RANK_WHITE = (1ULL << 28) | (1ULL << 29) | (1ULL << 30) | (1ULL << 31);
     const u64 PROMO_RANK_BLACK = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3);
@@ -135,60 +137,83 @@ namespace kestog_core {
         }
     }
 
+    // =================================================================================
+    // >>>>> ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Упрощенная и надежная генерация ходов <<<<<
+    // =================================================================================
     void find_man_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, int color, u64 opponents, u64 empty) {
         bool can_jump_further = false;
         u64 promo_rank = (color == 1) ? PROMO_RANK_WHITE : PROMO_RANK_BLACK;
         
-        // Вперед-вправо (+9)
-        if ((current_pos & NOT_G_H_COL) != 0) {
-            u64 jumped_pos = (current_pos << 4) | (current_pos << 5);
-            u64 land_pos = current_pos << 9;
-            if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
-                can_jump_further = true;
-                u64 new_captured = captured | jumped_pos;
-                u64 new_opponents = opponents & ~jumped_pos;
-                u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
-                if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
-                else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+        int from_idx = bitscan_forward(current_pos) - 1;
+        int row = from_idx / 4;
+
+        // Проверяем все 4 направления
+        // СВ
+        if (!(current_pos & COL_G) && !(current_pos & COL_H)) {
+            int jumped_idx = from_idx + (row % 2 == 0 ? 5 : 4);
+            int land_idx = from_idx + 9;
+            if (land_idx < 32) {
+                u64 jumped_pos = 1ULL << jumped_idx;
+                u64 land_pos = 1ULL << land_idx;
+                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
+                    can_jump_further = true;
+                    u64 new_captured = captured | jumped_pos;
+                    u64 new_opponents = opponents & ~jumped_pos;
+                    u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
+                    if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
+                    else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+                }
             }
         }
-        // Вперед-влево (+7)
-        if ((current_pos & NOT_A_B_COL) != 0) {
-            u64 jumped_pos = (current_pos << 3) | (current_pos << 4);
-            u64 land_pos = current_pos << 7;
-            if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
-                can_jump_further = true;
-                u64 new_captured = captured | jumped_pos;
-                u64 new_opponents = opponents & ~jumped_pos;
-                u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
-                if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
-                else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+        // СЗ
+        if (!(current_pos & COL_A) && !(current_pos & COL_B)) {
+            int jumped_idx = from_idx + (row % 2 == 0 ? 4 : 3);
+            int land_idx = from_idx + 7;
+            if (land_idx < 32) {
+                u64 jumped_pos = 1ULL << jumped_idx;
+                u64 land_pos = 1ULL << land_idx;
+                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
+                    can_jump_further = true;
+                    u64 new_captured = captured | jumped_pos;
+                    u64 new_opponents = opponents & ~jumped_pos;
+                    u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
+                    if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
+                    else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+                }
             }
         }
-        // Назад-влево (-9)
-        if ((current_pos & NOT_A_B_COL) != 0) {
-            u64 jumped_pos = (current_pos >> 4) | (current_pos >> 5);
-            u64 land_pos = current_pos >> 9;
-            if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
-                can_jump_further = true;
-                u64 new_captured = captured | jumped_pos;
-                u64 new_opponents = opponents & ~jumped_pos;
-                u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
-                if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
-                else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+        // ЮЗ
+        if (!(current_pos & COL_A) && !(current_pos & COL_B)) {
+            int jumped_idx = from_idx - (row % 2 == 0 ? 4 : 5);
+            int land_idx = from_idx - 9;
+            if (land_idx >= 0) {
+                u64 jumped_pos = 1ULL << jumped_idx;
+                u64 land_pos = 1ULL << land_idx;
+                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
+                    can_jump_further = true;
+                    u64 new_captured = captured | jumped_pos;
+                    u64 new_opponents = opponents & ~jumped_pos;
+                    u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
+                    if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
+                    else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+                }
             }
         }
-        // Назад-вправо (-7)
-        if ((current_pos & NOT_G_H_COL) != 0) {
-            u64 jumped_pos = (current_pos >> 3) | (current_pos >> 4);
-            u64 land_pos = current_pos >> 7;
-            if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
-                can_jump_further = true;
-                u64 new_captured = captured | jumped_pos;
-                u64 new_opponents = opponents & ~jumped_pos;
-                u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
-                if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
-                else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+        // ЮВ
+        if (!(current_pos & COL_G) && !(current_pos & COL_H)) {
+            int jumped_idx = from_idx - (row % 2 == 0 ? 3 : 4);
+            int land_idx = from_idx - 7;
+            if (land_idx >= 0) {
+                u64 jumped_pos = 1ULL << jumped_idx;
+                u64 land_pos = 1ULL << land_idx;
+                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty)) {
+                    can_jump_further = true;
+                    u64 new_captured = captured | jumped_pos;
+                    u64 new_opponents = opponents & ~jumped_pos;
+                    u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
+                    if (land_pos & promo_rank) find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
+                    else find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
+                }
             }
         }
 
@@ -223,19 +248,33 @@ namespace kestog_core {
     std::vector<Move> generate_quiet_moves(const Bitboard& board, int color_to_move) {
         std::vector<Move> moves;
         const u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
-        if (color_to_move == 1) { // Белые ходят вперед
-            u64 men = board.white_men & ~board.kings;
-            u64 movers_4 = ((men & NOT_A_COL) << 4) & empty;
-            u64 movers_5 = ((men & NOT_H_COL) << 5) & empty;
-            while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t >> 4, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_4 &= movers_4 - 1; }
-            while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t >> 5, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_5 &= movers_5 - 1; }
-        } else { // Черные ходят вперед
-            u64 men = board.black_men & ~board.kings;
-            u64 movers_4 = ((men & NOT_H_COL) >> 4) & empty;
-            u64 movers_5 = ((men & NOT_A_COL) >> 5) & empty;
-            while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t << 4, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); movers_4 &= movers_4 - 1; }
-            while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t << 5, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); movers_5 &= movers_5 - 1; }
+        u64 my_men = ((color_to_move == 1) ? board.white_men : board.black_men) & ~board.kings;
+
+        while (my_men) {
+            u64 p = 1ULL << (bitscan_forward(my_men) - 1);
+            int from_idx = bitscan_forward(p) - 1;
+            int row = from_idx / 4;
+
+            if (color_to_move == 1) { // Белые
+                if (row % 2 == 0) { // Ряды 1,3,5,7
+                    if (!(p & COL_A)) { u64 t = p << 4; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); }
+                    if (!(p & COL_H)) { u64 t = p << 5; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); }
+                } else { // Ряды 2,4,6,8
+                    if (!(p & COL_A)) { u64 t = p << 3; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); }
+                    if (!(p & COL_H)) { u64 t = p << 4; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); }
+                }
+            } else { // Черные
+                if (row % 2 == 0) { // Ряды 1,3,5,7
+                    if (!(p & COL_A)) { u64 t = p >> 5; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); }
+                    if (!(p & COL_H)) { u64 t = p >> 4; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); }
+                } else { // Ряды 2,4,6,8
+                    if (!(p & COL_A)) { u64 t = p >> 4; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); }
+                    if (!(p & COL_H)) { u64 t = p >> 3; if (t & empty) moves.push_back({p, t, 0, (t & PROMO_RANK_BLACK) != 0, 0}); }
+                }
+            }
+            my_men &= my_men - 1;
         }
+
         u64 kings = ((color_to_move == 1) ? board.white_men : board.black_men) & board.kings;
         while(kings) {
             u64 p = 1ULL << (bitscan_forward(kings) - 1);
