@@ -36,12 +36,12 @@ namespace kestog_core {
 
     // --- Константы доски ---
     const u64 BOARD_MASK = 0xFFFFFFFF;
-    const u64 COL_A = 0x11111111;
-    const u64 COL_H = 0x88888888;
+    const u64 COL_A = 0x11111111; // b1, a2, b3, a4...
+    const u64 COL_H = 0x88888888; // h1, g2, h3, g4...
     const u64 NOT_COL_A = BOARD_MASK & ~COL_A;
     const u64 NOT_COL_H = BOARD_MASK & ~COL_H;
-    const u64 PROMO_RANK_WHITE = 0xF0000000;
-    const u64 PROMO_RANK_BLACK = 0x0000000F;
+    const u64 PROMO_RANK_WHITE = 0xF0000000; // a8, c8, e8, g8
+    const u64 PROMO_RANK_BLACK = 0x0000000F; // b1, d1, f1, h1
 
     // --- Прототипы внутренних функций ---
     void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty);
@@ -97,84 +97,92 @@ namespace kestog_core {
     // =================================================================================
     // НАЧАЛО ИСПРАВЛЕННОГО БЛОКА: Полностью переписанная логика генерации взятий
     // =================================================================================
-    void find_man_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, int color, u64 opponents, u64 empty) {
+    
+    // ИСПРАВЛЕННАЯ ФУНКЦИЯ: Генерация взятий для дамки по правилам русских шашек
+    void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty) {
         bool can_jump_further = false;
-        u64 promo_rank = (color == 1) ? PROMO_RANK_WHITE : PROMO_RANK_BLACK;
-
-        // Направления для белых: +4, +5 (вперед), -4, -5 (назад)
-        // Направления для черных: -4, -5 (вперед), +4, +5 (назад)
-        int dirs[] = {4, 5, -4, -5};
-        u64 guards1[] = {NOT_COL_A, NOT_COL_H, NOT_COL_H, NOT_COL_A}; // Ограничения для поля, С которого прыгаем
-        u64 guards2[] = {NOT_COL_H, NOT_COL_A, NOT_COL_A, NOT_COL_H}; // Ограничения для поля, НА которое прыгаем
+        int dirs[] = {5, 4, -5, -4}; // Направления: СВ, СЗ, ЮЗ, ЮВ
+        u64 guards[] = {NOT_COL_H, NOT_COL_A, NOT_COL_A, NOT_COL_H}; // Ограничители для краев доски
 
         for (int i = 0; i < 4; ++i) {
             int dir = dirs[i];
+            u64 guard = guards[i];
             
-            // Шашки ходят только вперед, но бьют в любую сторону.
-            // Проверяем, является ли направление "вперед" для текущего цвета.
-            bool is_forward_move = (color == 1 && dir > 0) || (color == 2 && dir < 0);
+            // 1. Скользим по пустым клеткам в поисках ПЕРВОЙ фигуры на диагонали
+            u64 path = current_pos;
+            while ((path = (dir > 0) ? (path << dir) : (path >> -dir)) & empty & guard);
 
-            if ((current_pos & guards1[i])) {
-                u64 jumped_pos = (dir > 0) ? (current_pos << dir) : (current_pos >> -dir);
-                u64 land_pos = (dir > 0) ? (jumped_pos << dir) : (jumped_pos >> -dir);
+            // 2. Нашли препятствие. Проверяем, можем ли мы его срубить.
+            //    - это фигура оппонента
+            //    - мы ее еще не рубили в этой серии
+            //    - за ней есть хотя бы одно пустое поле
+            if ((path & opponents) && !(captured & path) && (path & guard)) {
+                u64 jumped_pos = path;
+                u64 land_pos_check = (dir > 0) ? (jumped_pos << dir) : (jumped_pos >> -dir);
 
-                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty) && (land_pos & guards2[i])) {
-                    can_jump_further = true;
-                    u64 new_captured = captured | jumped_pos;
-                    // ПРАВИЛЬНОЕ ОБНОВЛЕНИЕ ПУСТЫХ КЛЕТОК
-                    u64 new_empty = (empty | current_pos) & ~land_pos;
-
-                    if (is_forward_move && (land_pos & promo_rank)) {
-                        find_king_jumps(captures, start_pos, land_pos, new_captured, opponents, new_empty);
-                    } else {
-                        find_man_jumps(captures, start_pos, land_pos, new_captured, color, opponents, new_empty);
+                if ((land_pos_check & empty) && (land_pos_check & guard)) {
+                    // 3. ПРАВИЛО РУССКИХ ШАШЕК: Дамка может встать на ЛЮБОЕ поле за сбитой шашкой
+                    for (u64 land_path = land_pos_check; (land_path & guard); land_path = (dir > 0) ? (land_path << dir) : (land_path >> -dir)) {
+                        if (!(land_path & empty)) break; // Если уперлись в другую фигуру, дальше не летим
+                        
+                        can_jump_further = true;
+                        u64 new_captured = captured | jumped_pos;
+                        // Обновляем битовые маски для рекурсивного вызова
+                        u64 new_opponents = opponents & ~jumped_pos;
+                        u64 new_empty = (empty | current_pos | jumped_pos) & ~land_path;
+                        
+                        find_king_jumps(captures, start_pos, land_path, new_captured, new_opponents, new_empty);
                     }
                 }
             }
         }
 
+        // Если дальше прыгать некуда, но мы уже совершили хотя бы одно взятие,
+        // то это конечная точка валидной серии взятий.
         if (!can_jump_further && captured > 0) {
-            bool becomes_king = (current_pos & promo_rank) && !(start_pos & promo_rank);
-            captures.push_back({start_pos, current_pos, captured, becomes_king, 0});
+            captures.push_back({start_pos, current_pos, captured, false, 0});
         }
     }
 
-    void find_king_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, u64 opponents, u64 empty) {
+    // ИСПРАВЛЕННАЯ ФУНКЦИЯ: Генерация взятий для простой шашки
+    void find_man_jumps(std::vector<Move>& captures, u64 start_pos, u64 current_pos, u64 captured, int color, u64 opponents, u64 empty) {
         bool can_jump_further = false;
+        u64 promo_rank = (color == 1) ? PROMO_RANK_WHITE : PROMO_RANK_BLACK;
+
+        // Простая шашка бьет в любом направлении
         int dirs[] = {5, 4, -5, -4};
         u64 guards[] = {NOT_COL_H, NOT_COL_A, NOT_COL_A, NOT_COL_H};
 
         for (int i = 0; i < 4; ++i) {
             int dir = dirs[i];
             u64 guard = guards[i];
-            
-            u64 path = current_pos;
-            // Скользим по пустым клеткам в поисках ПЕРВОЙ фигуры на диагонали
-            while ((path = (dir > 0) ? (path << dir) : (path >> -dir)) & empty & guard);
 
-            // Нашли препятствие. Проверяем, можем ли мы его срубить.
-            if ((path & opponents) && !(captured & path) && (path & guard)) {
-                u64 jumped_pos = path;
+            // Проверяем, что мы не выходим за пределы доски
+            if ((current_pos & guard)) {
+                u64 jumped_pos = (dir > 0) ? (current_pos << dir) : (current_pos >> -dir);
                 u64 land_pos = (dir > 0) ? (jumped_pos << dir) : (jumped_pos >> -dir);
 
-                // Если за срубленной фигурой есть хотя бы одна пустая клетка
-                if ((land_pos & empty) && (land_pos & guard)) {
-                    // Можем приземлиться на любую пустую клетку на этой диагонали
-                    for (u64 land_path = land_pos; (land_path & guard); land_path = (dir > 0) ? (land_path << dir) : (land_path >> -dir)) {
-                        if (!(land_path & empty)) break;
-                        
-                        can_jump_further = true;
-                        u64 new_captured = captured | jumped_pos;
-                        // ПРАВИЛЬНОЕ ОБНОВЛЕНИЕ ПУСТЫХ КЛЕТОК
-                        u64 new_empty = (empty | current_pos | jumped_pos) & ~land_path;
-                        find_king_jumps(captures, start_pos, land_path, new_captured, opponents, new_empty);
+                // Проверяем условия для взятия
+                if ((jumped_pos & opponents) && !(captured & jumped_pos) && (land_pos & empty) && (land_pos & guard)) {
+                    can_jump_further = true;
+                    u64 new_captured = captured | jumped_pos;
+                    u64 new_opponents = opponents & ~jumped_pos;
+                    u64 new_empty = (empty | current_pos | jumped_pos) & ~land_pos;
+
+                    // ПРАВИЛО "ТУРЕЦКОГО УДАРА": если шашка приземлилась на дамочное поле,
+                    // она становится дамкой и продолжает бить в этом же ходе.
+                    if (land_pos & promo_rank) {
+                        find_king_jumps(captures, start_pos, land_pos, new_captured, new_opponents, new_empty);
+                    } else {
+                        find_man_jumps(captures, start_pos, land_pos, new_captured, color, new_opponents, new_empty);
                     }
                 }
             }
         }
 
         if (!can_jump_further && captured > 0) {
-            captures.push_back({start_pos, current_pos, captured, false, 0});
+            bool becomes_king = (current_pos & promo_rank) != 0;
+            captures.push_back({start_pos, current_pos, captured, becomes_king, 0});
         }
     }
     // =================================================================================
@@ -207,13 +215,13 @@ namespace kestog_core {
     std::vector<Move> generate_quiet_moves(const Bitboard& board, int color_to_move) {
         std::vector<Move> moves;
         const u64 empty = BOARD_MASK & ~(board.white_men | board.black_men);
-        if (color_to_move == 1) {
+        if (color_to_move == 1) { // Белые ходят вперед (сдвиг > 0)
             u64 men = board.white_men & ~board.kings;
             u64 movers_4 = ((men & NOT_COL_A) << 4) & empty;
             u64 movers_5 = ((men & NOT_COL_H) << 5) & empty;
             while(movers_4) { u64 t = 1ULL << (bitscan_forward(movers_4) - 1); moves.push_back({t >> 4, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_4 &= movers_4 - 1; }
             while(movers_5) { u64 t = 1ULL << (bitscan_forward(movers_5) - 1); moves.push_back({t >> 5, t, 0, (t & PROMO_RANK_WHITE) != 0, 0}); movers_5 &= movers_5 - 1; }
-        } else {
+        } else { // Черные ходят вперед (сдвиг < 0)
             u64 men = board.black_men & ~board.kings;
             u64 movers_4 = ((men & NOT_COL_H) >> 4) & empty;
             u64 movers_5 = ((men & NOT_COL_A) >> 5) & empty;
@@ -241,6 +249,9 @@ namespace kestog_core {
     std::vector<Move> generate_legal_moves(const Bitboard& board, int color_to_move) {
         auto captures = generate_captures(board, color_to_move);
         if (!captures.empty()) {
+            // ПРАВИЛО БОЛЬШИНСТВА: если есть взятия, нужно выбрать то, где бьется больше всего шашек.
+            // В русских шашках это правило не всегда применяется (зависит от кодекса), но для движка оно необходимо.
+            // Если по официальным правилам турнира его нет, эту часть можно убрать.
             int max_captured = 0;
             for (const auto& m : captures) {
                 max_captured = std::max(max_captured, (int)popcount(m.captured_pieces));
@@ -259,15 +270,29 @@ namespace kestog_core {
     // --- Оценка и Применение хода ---
     const int PST[32] = { 10,10,10,10, 8,8,8,8, 6,6,6,6, 4,4,4,4, 2,2,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0 };
 
+    // ИСПРАВЛЕНИЕ: Оценка для поддавков!
+    // Цель - иметь МЕНЬШЕ материала. Поэтому оценка должна быть инвертирована.
     int evaluate_giveaway(const Bitboard& b) {
+        // Чем больше материала у белых, тем ХУЖЕ для них.
+        // Чем больше материала у черных, тем ЛУЧШЕ для белых.
         int white_material = popcount(b.white_men & ~b.kings) * 100 + popcount(b.white_men & b.kings) * 300;
         int black_material = popcount(b.black_men & ~b.kings) * 100 + popcount(b.black_men & b.kings) * 300;
+        
+        // Позиционные бонусы: выгодно, чтобы свои фигуры были ближе к краю соперника (их легче отдать)
+        int white_pos = 0;
+        int black_pos = 0;
+        u64 wm = b.white_men & ~b.kings;
+        u64 bm = b.black_men & ~b.kings;
         for (int i = 0; i < 32; ++i) {
             u64 mask = 1ULL << i;
-            if (b.white_men & ~b.kings & mask) white_material += PST[i];
-            if (b.black_men & ~b.kings & mask) black_material += PST[31 - i];
+            if (wm & mask) white_pos += PST[i]; // Белым выгодно быть на полях с большим PST (ближе к дамочному полю)
+            if (bm & mask) black_pos += PST[31 - i]; // Черным выгодно быть на полях с большим PST (ближе к дамочному полю)
         }
-        return black_material - white_material;
+        
+        // Итоговая оценка с точки зрения белых:
+        // (Материал черных - Материал белых) + (Позиция черных - Позиция белых)
+        // Мы хотим, чтобы у нас было меньше материала и наши фигуры были продвинуты вперед.
+        return (black_material - white_material) + (black_pos - white_pos);
     }
 
     Bitboard apply_move(const Bitboard& b, const Move& m, int c) {
@@ -287,7 +312,7 @@ namespace kestog_core {
                 next_b.black_men &= ~m.captured_pieces;
                 next_b.kings &= ~m.captured_pieces;
             }
-            if (m.becomes_king) next_b.kings |= m.mask_to;
+            if (m.becomes_king && !is_king_before_move) next_b.kings |= m.mask_to;
         } else { // Black moves
             next_b.black_men ^= from_to;
             if (is_king_before_move) next_b.kings ^= from_to;
@@ -295,13 +320,13 @@ namespace kestog_core {
                 next_b.white_men &= ~m.captured_pieces;
                 next_b.kings &= ~m.captured_pieces;
             }
-            if (m.becomes_king) next_b.kings |= m.mask_to;
+            if (m.becomes_king && !is_king_before_move) next_b.kings |= m.mask_to;
         }
 
         // 2. Обновляем хеш
         int piece_type_from = (c == 1) ? (is_king_before_move ? 2 : 0) : (is_king_before_move ? 3 : 1);
         next_b.hash ^= ZOBRIST[from_idx][piece_type_from];
-        // ИСПРАВЛЕНИЕ: Учитываем, что фигура может уже быть дамкой
+        
         int piece_type_to = (c == 1) ? (m.becomes_king || is_king_before_move ? 2 : 0) : (m.becomes_king || is_king_before_move ? 3 : 1);
         next_b.hash ^= ZOBRIST[to_idx][piece_type_to];
 
@@ -319,7 +344,7 @@ namespace kestog_core {
         return next_b;
     }
 
-    // --- Логика Поиска ---
+    // --- Логика Поиска (без изменений, она универсальна) ---
     void score_moves(std::vector<Move>& moves, const Move& tt_move, int ply) {
         for (auto& move : moves) {
             if (move.mask_from == tt_move.mask_from && move.mask_to == tt_move.mask_to) {
@@ -361,7 +386,8 @@ namespace kestog_core {
 
         auto moves = generate_legal_moves(board, color);
         if (moves.empty()) {
-            return -MATE_SCORE + ply;
+            // В поддавках проигрыш (нет ходов) - это ВЫИГРЫШ для текущего игрока
+            return MATE_SCORE - ply;
         }
         score_moves(moves, tt_entry.best_move, ply);
 
@@ -371,6 +397,11 @@ namespace kestog_core {
 
         for (const auto& move : moves) {
             Bitboard next_board = apply_move(board, move, color);
+            
+            // Проверка на выигрыш в поддавках (отдали все шашки)
+            if ((color == 1 && next_board.white_men == 0) || (color == 2 && next_board.black_men == 0)) {
+                return MATE_SCORE - ply;
+            }
 
             int score = -negamax(next_board, -beta, -alpha, depth - 1, 3 - color, ply + 1);
 
@@ -406,13 +437,18 @@ namespace kestog_core {
         if (stand_pat >= beta) return beta;
         if (alpha < stand_pat) alpha = stand_pat;
 
-        auto captures = generate_legal_moves(board, color);
-        if (captures.empty() || captures[0].captured_pieces == 0 || ply > 8) {
+        auto captures = generate_captures(board, color); // В поиске покоя смотрим только взятия
+        if (captures.empty() || ply > 8) {
             return stand_pat;
         }
-        score_moves(captures, Move(), 0);
-
+        
+        // Применяем правило большинства и здесь
+        int max_captured = 0;
+        for (const auto& m : captures) max_captured = std::max(max_captured, (int)popcount(m.captured_pieces));
+        
         for (const auto& capture : captures) {
+            if (popcount(capture.captured_pieces) < max_captured) continue;
+
             Bitboard next_board = apply_move(board, capture, color);
             int score = -quiescence_search(next_board, -beta, -alpha, 3 - color, ply + 1);
             if (score >= beta) return beta;
