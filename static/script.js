@@ -8,29 +8,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPlayerTurn = true;
     let socket = null;
 
-    // Таблица для конвертации удалена, она больше не нужна.
-
-    function getInitialBoard() { // Эта функция не используется для старта, но исправлена для консистентности
-        return {
-            white_men: "4095",
-            black_men: "4293918720", // Исправленное значение
-            kings: "0"
-        };
-    }
-
     function renderBoard() {
         boardElement.innerHTML = '';
         for (let row = 7; row >= 0; row--) {
             for (let col = 0; col < 8; col++) {
                 const square = document.createElement('div');
-                const squareIndex64 = row * 8 + col;
                 square.className = 'square';
                 const isDark = (row + col) % 2 !== 0;
-
                 square.classList.add(isDark ? 'dark' : 'light');
                 
                 if (isDark) {
-                    // Корректный расчет индекса 0-31
                     const boardIndex32 = row * 4 + Math.floor(col / 2);
                     square.dataset.boardIndex = boardIndex32;
 
@@ -104,8 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const fromIndex32 = parseInt(fromSquare.dataset.boardIndex);
             const toIndex32 = parseInt(toSquare.dataset.boardIndex);
             
-            // Отправляем индексы 0-31 напрямую
             const move = { from: fromIndex32, to: toIndex32 };
+            // Клиент просто отправляет свой ход и ждет ответа
             socket.send(JSON.stringify({ type: 'move', move: move }));
         }
 
@@ -154,12 +141,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 statusElement.textContent = data.message || (isPlayerTurn ? 'Ваш ход' : 'Ход движка...');
-                if (!isPlayerTurn) {
-                    setTimeout(() => socket.send(JSON.stringify({ type: 'engine_move' })), 500);
-                }
+                
+                // =================================================================
+                // >>>>> ИЗМЕНЕНИЕ ЛОГИКИ <<<<<
+                // Удален блок, который отправлял 'engine_move'.
+                // Клиент теперь полностью пассивен и ждет команд от сервера.
+                // =================================================================
+
             } else if (data.type === 'error') {
                 statusElement.textContent = `Ошибка: ${data.message}`;
-                isPlayerTurn = true;
+                isPlayerTurn = true; // Возвращаем ход игроку после ошибки
                 renderBoard();
             } else if (data.type === 'game_over') {
                 currentBoard = data.board || currentBoard;
